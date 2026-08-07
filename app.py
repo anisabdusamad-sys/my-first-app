@@ -794,7 +794,7 @@ HTML_TEMPLATE = r"""
             transform: scale(1.05);
         }
         #theme-toggle-btn {
-            position:fixed; top:140px; right:20px; z-index: 10000; color:white; width:48px; height:48px;
+            position:fixed; top:80px; right:20px; z-index: 10000; color:white; width:48px; height:48px;
             border-radius:50%; display:none; justify-content:center; align-items:center;
             cursor:pointer; background: rgba(255,255,255,0.1); backdrop-filter: blur(12px);
             background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(12px);
@@ -1580,6 +1580,55 @@ HTML_TEMPLATE = r"""
         }
 
         /* Танзимот барои бахши Отзыв: Паймон ва муосир (2-то дар як сатр) */
+        /* Mobile navigation: home has four actions; inner screens retain cart access. */
+        #home-bottom-nav { display: none; }
+        #notif-bell-btn { display: none !important; }
+        @media (max-width: 767px) {
+            #home-bottom-nav {
+                position: fixed;
+                left: 12px;
+                right: 12px;
+                bottom: calc(10px + env(safe-area-inset-bottom));
+                z-index: 12000;
+                align-items: center;
+                justify-content: space-around;
+                padding: 8px 6px;
+                border: 1px solid rgba(255,255,255,.14);
+                border-radius: 22px;
+                background: rgba(18,18,20,.94);
+                box-shadow: 0 12px 32px rgba(0,0,0,.38);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+            }
+            #home-bottom-nav button {
+                width: 25%;
+                min-height: 48px;
+                border: 0;
+                border-radius: 15px;
+                background: transparent;
+                color: rgba(255,255,255,.68);
+                font-size: 9px;
+                font-weight: 800;
+                letter-spacing: .02em;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+            }
+            #home-bottom-nav button:active { transform: scale(.94); }
+            #home-bottom-nav button i { font-size: 18px; }
+            #home-bottom-nav .home-nav-active { color: #ffd700; background: rgba(255,215,0,.12); }
+            #phone-order-btn { display: none !important; }
+            #cart-btn { display: flex !important; }
+            body.home-nav-active #cart-btn { display: none !important; }
+            #home-cart-nav-btn { position: relative; }
+            #home-cart-count { position: absolute; top: -4px; right: 9px; min-width: 18px; height: 18px; padding: 0 4px; border: 2px solid #151515; border-radius: 999px; background: #facc15; color: #111; font-size: 9px; line-height: 14px; font-weight: 900; }
+            .order-modal-overlay.full-page-view { padding: 0; align-items: stretch; }
+            .order-modal-overlay.full-page-view .order-modal { max-width: none; min-height: 100%; padding-bottom: 86px; border: 0; border-radius: 0; display: flex; flex-direction: column; }
+            .order-modal-overlay.full-page-view #cart-items-list { max-height: none; flex: 1; }
+        }
+
         #otziv-section .product-card {
             grid-column: span 1; 
             min-height: 200px;
@@ -1618,21 +1667,7 @@ HTML_TEMPLATE = r"""
             70% { box-shadow: 0 0 0 10px rgba(228, 0, 43, 0); }
             100% { box-shadow: 0 0 0 0 rgba(228, 0, 43, 0); }
         }
-        
-        /* ==================== SWIPE TO GO BACK GESTURE ==================== */
-        /* Prevent horizontal scroll conflicts and enable smooth swipe gestures */
-        html, body {
-            touch-action: pan-y;
-            overscroll-behavior-x: none;
-            -webkit-over-scrolling: touch;
-        }
-        
-        /* Ensure main content doesn't interfere with edge swipes */
-        #main-content, #auth-section, .content-section {
-            touch-action: pan-y;
-            overscroll-behavior-x: none;
-        }
-        
+
     </style>
 </head>
 <body>
@@ -1663,6 +1698,21 @@ HTML_TEMPLATE = r"""
     <div id="phone-order-btn" onclick="showPhoneOrderModal()" class="fixed bottom-24 left-4 z-[10000] bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20 active:scale-90 transition-all cursor-pointer">
         <i class="fa-solid fa-phone text-xl"></i>
     </div>
+
+    <nav id="home-bottom-nav" aria-label="Навигатсияи асосӣ">
+        <button type="button" data-home-nav="home" class="home-nav-active" onclick="openHomeDestination('home')">
+            <i class="fa-solid fa-house"></i><span>Главная</span>
+        </button>
+        <button id="home-cart-nav-btn" type="button" data-home-nav="cart" onclick="openHomeDestination('cart')">
+            <i class="fa-solid fa-cart-shopping"></i><span>Корзина</span><span id="home-cart-count" class="hidden">0</span>
+        </button>
+        <button type="button" data-home-nav="phone" onclick="openHomeDestination('phone')">
+            <i class="fa-solid fa-phone"></i><span>Звонок</span>
+        </button>
+        <button type="button" data-home-nav="messages" onclick="openHomeDestination('messages')">
+            <i class="fa-solid fa-message"></i><span>Сообщения</span>
+        </button>
+    </nav>
 
     <!-- CART MODAL OVERLAY -->
     <div id="cart-modal-overlay" class="order-modal-overlay">
@@ -2715,17 +2765,95 @@ HTML_TEMPLATE = r"""
             }
         }
 
+        function setHomeNavActive(action) {
+            document.querySelectorAll('#home-bottom-nav [data-home-nav]').forEach((button) => {
+                button.classList.toggle('home-nav-active', button.dataset.homeNav === action);
+            });
+            document.body.classList.toggle('bottom-nav-pinned', action !== 'home');
+        }
+
+        let bottomPageInHistory = false;
+
+        function addBottomPageHistory(page) {
+            const state = { tfcBottomPage: page };
+            if (bottomPageInHistory) {
+                history.replaceState(state, '', location.href);
+            } else {
+                history.pushState(state, '', location.href);
+                bottomPageInHistory = true;
+            }
+        }
+
+        function closeBottomNavPages() {
+            ['cart-modal-overlay', 'phone-order-modal-overlay'].forEach((overlayId) => {
+                const overlay = document.getElementById(overlayId);
+                if (overlay) overlay.classList.remove('active', 'full-page-view');
+            });
+        }
+
+        function openHomeDestination(action) {
+            closeBottomNavPages();
+            const notifications = document.getElementById('notifications-section');
+            if (action !== 'messages' && notifications && notifications.style.display !== 'none') {
+                notifications.style.display = 'none';
+                document.getElementById('intro-section').style.display = 'flex';
+                document.getElementById('menu').style.display = 'block';
+            }
+            setHomeNavActive(action);
+
+            if (action === 'cart') {
+                addBottomPageHistory('cart');
+                return showCart();
+            }
+            if (action === 'phone') {
+                addBottomPageHistory('phone');
+                return showPhoneOrderModal();
+            }
+            if (action === 'messages') return showNotifications();
+
+            if (notifications && notifications.style.display !== 'none') {
+                return hideNotifications();
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTopControlsVisible(true);
+        }
+
+        window.addEventListener('popstate', (event) => {
+            if (!bottomPageInHistory) return;
+            event.stopImmediatePropagation();
+            bottomPageInHistory = false;
+            closeBottomNavPages();
+            document.getElementById('intro-section').style.display = 'flex';
+            document.getElementById('menu').style.display = 'block';
+            setHomeNavActive('home');
+            setTopControlsVisible(true);
+        }, true);
+
         function setTopControlsVisible(isVisible) {
             const signOutBtn = document.getElementById("sign-out-btn");
             const idBadge = document.getElementById("customer-id-badge");
             const notifBtn = document.getElementById("notif-bell-btn");
             const themeToggleBtn = document.getElementById("theme-toggle-btn");
             const phoneOrderBtn = document.getElementById("phone-order-btn");
+            const cartBtn = document.getElementById("cart-btn");
+            const homeBottomNav = document.getElementById("home-bottom-nav");
+            const introSection = document.getElementById("intro-section");
+            const menuSection = document.getElementById("menu");
             
             if (signOutBtn) signOutBtn.style.display = isVisible ? "flex" : "none";
             if (notifBtn) notifBtn.style.display = isVisible ? "flex" : "none";
             if (themeToggleBtn) themeToggleBtn.style.display = isVisible ? "flex" : "none";
-            if (phoneOrderBtn) phoneOrderBtn.style.display = isVisible ? "flex" : "none";
+            // Ordering controls must stay available on every menu/category screen.
+            if (phoneOrderBtn) phoneOrderBtn.style.display = "flex";
+            if (cartBtn) cartBtn.style.display = "flex";
+            if (homeBottomNav) {
+                const isHomeScreen = introSection && menuSection &&
+                    introSection.style.display !== "none" && menuSection.style.display !== "none";
+                if (isHomeScreen) document.body.classList.remove("bottom-nav-pinned");
+                const keepBottomNav = isHomeScreen || document.body.classList.contains("bottom-nav-pinned");
+                homeBottomNav.style.display = keepBottomNav ? "flex" : "none";
+                document.body.classList.toggle("home-nav-active", isHomeScreen);
+            }
             
             if (isVisible) {
                 if (idBadge) idBadge.classList.remove("hidden");
@@ -2872,10 +3000,10 @@ HTML_TEMPLATE = r"""
             document.getElementById('intro-section').style.display = 'flex';
             if(typeof animateSection === 'function') animateSection('menu');
             if(typeof animateSection === 'function') animateSection('intro-section');
-            updateTopControlsByScroll();
             window.scrollTo(0, 0);
             document.documentElement.scrollTop = 0;
             document.body.scrollTop = 0;
+            setTopControlsVisible(true);
             }, 350);
         }
         function showPizza() {
@@ -3352,10 +3480,11 @@ HTML_TEMPLATE = r"""
             document.getElementById('intro-section').style.display = 'flex';
             animateSection('menu');
             animateSection('intro-section');
-            updateTopControlsByScroll();
+            setHomeNavActive('home');
             window.scrollTo(0, 0);
             document.documentElement.scrollTop = 0;
             document.body.scrollTop = 0;
+            setTopControlsVisible(true);
             }, 350);
         }
 
@@ -3673,12 +3802,20 @@ HTML_TEMPLATE = r"""
         function showCart() {
             renderCart();
             const overlay = document.getElementById('cart-modal-overlay');
-            overlay.classList.add('active');
+            overlay.classList.add('active', 'full-page-view');
         }
 
         function closeCartModal() {
+            if (bottomPageInHistory) {
+                history.back();
+                return;
+            }
             const overlay = document.getElementById('cart-modal-overlay');
-            overlay.classList.remove('active');
+            overlay.classList.remove('active', 'full-page-view');
+            setHomeNavActive('home');
+            if (document.getElementById('intro-section').style.display !== 'none' && document.getElementById('menu').style.display !== 'none') {
+                setTopControlsVisible(true);
+            }
         }
 
         function openFoodInfoOverlay(card) {
@@ -3815,12 +3952,20 @@ HTML_TEMPLATE = r"""
 
         function showPhoneOrderModal() {
             const overlay = document.getElementById('phone-order-modal-overlay');
-            overlay.classList.add('active');
+            overlay.classList.add('active', 'full-page-view');
         }
 
         function closePhoneOrderModal() {
+            if (bottomPageInHistory) {
+                history.back();
+                return;
+            }
             const overlay = document.getElementById('phone-order-modal-overlay');
-            overlay.classList.remove('active');
+            overlay.classList.remove('active', 'full-page-view');
+            setHomeNavActive('home');
+            if (document.getElementById('intro-section').style.display !== 'none' && document.getElementById('menu').style.display !== 'none') {
+                setTopControlsVisible(true);
+            }
         }
 
 
@@ -3856,14 +4001,14 @@ HTML_TEMPLATE = r"""
         }
 
         function updateCartBadge() {
-            const badge = document.getElementById('cart-count');
-            if (badge) {
-                badge.textContent = cart.length;
-                badge.classList.toggle('hidden', cart.length === 0);
-                const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
+            const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
+            ['cart-count', 'home-cart-count'].forEach((badgeId) => {
+                const badge = document.getElementById(badgeId);
+                if (badge) {
                 badge.textContent = totalQty;
                 badge.classList.toggle('hidden', totalQty === 0);
-            }
+                }
+            });
         }
 
         function animateToCart() {
@@ -4331,59 +4476,90 @@ HTML_TEMPLATE = r"""
             }
         }
 
-        // ==================== SWIPE TO GO BACK GESTURE ====================
-        (function() {
-            const EDGE_THRESHOLD = 50; // pixels from left edge
-            const SWIPE_DISTANCE = 100; // minimum swipe distance
-            let touchStartX = 0;
-            let touchStartY = 0;
-            let isTracking = false;
+        // Keep in-app screens in the browser history. This makes Chrome's
+        // left-edge Back gesture return to the previous TFC screen first.
+        (function () {
+            const screens = {
+                showMenu: 'menu-section', showPizza: 'pizza-section',
+                showFastFood: 'fastfood-section', showSummerMenu: 'summer-menu-section',
+                showCombo: 'combo-section', showOtziv: 'otziv-section',
+                showAktsii: 'aktsii-section', showAdres: 'adres-section',
+                showVakansii: 'vakansii-section', showNotifications: 'notifications-section',
+                showSushi: 'sushi-section'
+            };
+            const categoryScreens = {
+                filterMenu: 'menu-section', filterPizza: 'pizza-section',
+                filterFastFood: 'fastfood-section', filterSummerMenu: 'summer-menu-section',
+                filterSushi: 'sushi-section'
+            };
+            const navigationFunctions = { ...screens, ...categoryScreens };
+            const hideFunctions = [
+                'hideMenu', 'hidePizza', 'hideFastFood', 'hideSummerMenu', 'hideCombo',
+                'hideOtziv', 'hideAktsii', 'hideAdres', 'hideVakansii', 'hideNotifications', 'hideSushi'
+            ];
+            let currentScreen = 'intro';
+            let restoring = false;
 
-            function handleTouchStart(e) {
-                // Only track if touch starts near the left edge
-                const touch = e.touches[0];
-                if (touch.clientX <= EDGE_THRESHOLD) {
-                    touchStartX = touch.clientX;
-                    touchStartY = touch.clientY;
-                    isTracking = true;
-                }
+            // Mark the initial screen without changing the visible URL.
+            history.replaceState({ tfcScreen: currentScreen }, '', location.href);
+
+            function setScreen(action, args) {
+                const screen = `${action}:${JSON.stringify(args)}`;
+                if (restoring || screen === currentScreen) return;
+                currentScreen = screen;
+                history.pushState({ tfcScreen: screen, action, args }, '', location.href);
             }
 
-            function handleTouchMove(e) {
-                if (!isTracking) return;
-                
-                const touch = e.touches[0];
-                const deltaX = touch.clientX - touchStartX;
-                const deltaY = Math.abs(touch.clientY - touchStartY);
-                
-                // Only prevent default if swiping horizontally (more horizontal than vertical)
-                if (deltaX > 10 && deltaX > deltaY) {
-                    e.preventDefault();
-                }
-            }
+            Object.keys(navigationFunctions).forEach((functionName) => {
+                const original = window[functionName];
+                if (typeof original !== 'function') return;
+                window[functionName] = function (...args) {
+                    const result = original.apply(this, args);
+                    setScreen(functionName, args);
+                    return result;
+                };
+            });
 
-            function handleTouchEnd(e) {
-                if (!isTracking) return;
-                
-                const touch = e.changedTouches[0];
-                const deltaX = touch.clientX - touchStartX;
-                const deltaY = Math.abs(touch.clientY - touchStartY);
-                
-                // Check if swipe was primarily horizontal and met distance threshold
-                if (deltaX > SWIPE_DISTANCE && deltaX > deltaY) {
-                    // Only go back if there's history to go back to
-                    if (window.history.length > 1) {
-                        window.history.back();
+            // Normal on-page back buttons should also leave the history in the
+            // home-screen state, ready for the next visit to a section.
+            hideFunctions.forEach((functionName) => {
+                const original = window[functionName];
+                if (typeof original !== 'function') return;
+                window[functionName] = function (...args) {
+                    const result = original.apply(this, args);
+                    if (!restoring) {
+                        currentScreen = 'intro';
+                        history.replaceState({ tfcScreen: currentScreen }, '', location.href);
                     }
-                }
-                
-                isTracking = false;
+                    return result;
+                };
+            });
+
+            function showIntro() {
+                stopAllVideos();
+                Object.values(screens).forEach((id) => {
+                    const element = document.getElementById(id);
+                    if (element) element.style.display = 'none';
+                });
+                const intro = document.getElementById('intro-section');
+                const menu = document.getElementById('menu');
+                if (intro) intro.style.display = 'flex';
+                if (menu) menu.style.display = 'block';
+                if (typeof updateTopControlsByScroll === 'function') updateTopControlsByScroll();
+                window.scrollTo(0, 0);
             }
 
-            // Add event listeners to document
-            document.addEventListener('touchstart', handleTouchStart, { passive: false });
-            document.addEventListener('touchmove', handleTouchMove, { passive: false });
-            document.addEventListener('touchend', handleTouchEnd, { passive: true });
+            window.addEventListener('popstate', (event) => {
+                if (!event.state || !event.state.tfcScreen) return;
+                restoring = true;
+                currentScreen = event.state.tfcScreen;
+                if (currentScreen === 'intro') {
+                    showIntro();
+                } else if (event.state.action && typeof window[event.state.action] === 'function') {
+                    window[event.state.action](...(event.state.args || []));
+                }
+                restoring = false;
+            });
         })();
 
     </script>
