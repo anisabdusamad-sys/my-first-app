@@ -1618,7 +1618,21 @@ HTML_TEMPLATE = r"""
             70% { box-shadow: 0 0 0 10px rgba(228, 0, 43, 0); }
             100% { box-shadow: 0 0 0 0 rgba(228, 0, 43, 0); }
         }
-
+        
+        /* ==================== SWIPE TO GO BACK GESTURE ==================== */
+        /* Prevent horizontal scroll conflicts and enable smooth swipe gestures */
+        html, body {
+            touch-action: pan-y;
+            overscroll-behavior-x: none;
+            -webkit-over-scrolling: touch;
+        }
+        
+        /* Ensure main content doesn't interfere with edge swipes */
+        #main-content, #auth-section, .content-section {
+            touch-action: pan-y;
+            overscroll-behavior-x: none;
+        }
+        
     </style>
 </head>
 <body>
@@ -4316,6 +4330,61 @@ HTML_TEMPLATE = r"""
                 if (overlay) overlay.style.opacity = '1'; // Тугмаро боз нишон медиҳем
             }
         }
+
+        // ==================== SWIPE TO GO BACK GESTURE ====================
+        (function() {
+            const EDGE_THRESHOLD = 50; // pixels from left edge
+            const SWIPE_DISTANCE = 100; // minimum swipe distance
+            let touchStartX = 0;
+            let touchStartY = 0;
+            let isTracking = false;
+
+            function handleTouchStart(e) {
+                // Only track if touch starts near the left edge
+                const touch = e.touches[0];
+                if (touch.clientX <= EDGE_THRESHOLD) {
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    isTracking = true;
+                }
+            }
+
+            function handleTouchMove(e) {
+                if (!isTracking) return;
+                
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - touchStartX;
+                const deltaY = Math.abs(touch.clientY - touchStartY);
+                
+                // Only prevent default if swiping horizontally (more horizontal than vertical)
+                if (deltaX > 10 && deltaX > deltaY) {
+                    e.preventDefault();
+                }
+            }
+
+            function handleTouchEnd(e) {
+                if (!isTracking) return;
+                
+                const touch = e.changedTouches[0];
+                const deltaX = touch.clientX - touchStartX;
+                const deltaY = Math.abs(touch.clientY - touchStartY);
+                
+                // Check if swipe was primarily horizontal and met distance threshold
+                if (deltaX > SWIPE_DISTANCE && deltaX > deltaY) {
+                    // Only go back if there's history to go back to
+                    if (window.history.length > 1) {
+                        window.history.back();
+                    }
+                }
+                
+                isTracking = false;
+            }
+
+            // Add event listeners to document
+            document.addEventListener('touchstart', handleTouchStart, { passive: false });
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTouchEnd, { passive: true });
+        })();
 
     </script>
 </body>
