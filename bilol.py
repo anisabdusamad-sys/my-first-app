@@ -9,12 +9,23 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from pywebpush import webpush, WebPushException
 from PIL import Image, ImageOps, UnidentifiedImageError
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
+
+# CORS configuration for bilol.py backend API
+CLIENT_URL = os.getenv("CLIENT_URL", "https://tfc-project-2sss.onrender.com")
+LOCAL_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+CORS(app, resources={r"/api/*": {
+    "origins": [CLIENT_URL] + LOCAL_ORIGINS,
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "X-API-KEY"]
+}})
+
 UPLOAD_FOLDER = 'static/images'
 IMAGE_MAX_SIZE = (1200, 1200)
 IMAGE_WEBP_QUALITY = 78
@@ -42,6 +53,9 @@ def detect_app_host():
     # Fallback to environment variable or default
     API_BASE_URL = DEFAULT_API_URL
     print(f"ℹ️ Using configured API URL: {API_BASE_URL}")
+
+# Auto-detect on module load
+detect_app_host()
 
 # Калидҳо бояд бо app.py якхела бошанд
 VAPID_PUBLIC_KEY = "BCX7B8_p9v7Z-S-l1M0W4Y1Z2X3C4V5B6N7M8L9K0J1I2H3G4F5E6D7C8B9A0S1D2F3G4H5J6K7L8"
