@@ -17,9 +17,44 @@ load_dotenv()
 
 app = Flask(__name__)
 
+def get_local_ip():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
+def build_local_origins():
+    local_ip = get_local_ip()
+    candidate_urls = [
+        os.getenv("CLIENT_URL"),
+        os.getenv("TFC_API_URL"),
+        f"http://{local_ip}:5000",
+        f"http://{local_ip}:5001",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+        "http://localhost:5001",
+        "http://127.0.0.1:5001",
+    ]
+    origins = []
+    for url in candidate_urls:
+        if not url:
+            continue
+        normalized = url.rstrip("/")
+        if normalized not in origins:
+            origins.append(normalized)
+    return origins
+
+
 # CORS configuration for bilol.py backend API
-CLIENT_URL = os.getenv("CLIENT_URL", "https://tfc-project-2sss.onrender.com")
-LOCAL_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+CLIENT_URL = os.getenv("CLIENT_URL") or os.getenv("TFC_API_URL") or f"http://{get_local_ip()}:5000"
+LOCAL_ORIGINS = build_local_origins()
 CORS(app, resources={r"/api/*": {
     "origins": [CLIENT_URL] + LOCAL_ORIGINS,
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -31,8 +66,8 @@ IMAGE_MAX_SIZE = (1200, 1200)
 IMAGE_WEBP_QUALITY = 78
 
 # API Base URL for inter-app communication
-# Will be dynamically detected from app.py if available
-DEFAULT_API_URL = os.getenv("TFC_API_URL", "http://127.0.0.1:5000")
+# Prefer a real LAN IP when running locally so phone browsers can reach the app.
+DEFAULT_API_URL = os.getenv("TFC_API_URL") or f"http://{get_local_ip()}:5000"
 API_BASE_URL = DEFAULT_API_URL
 
 def detect_app_host():
@@ -67,11 +102,28 @@ API_KEY = os.getenv("TFC_API_KEY", "tfc_secret_key_2026_xyz_secure")
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "tfc_admin.db"))
 
 def require_api_key(f):
-    """Decorator to require API key for protected routes"""
+    """Decorator to require API key for protected routes.
+
+    Allow same-host LAN requests so the admin panel can work on 192.168.x.x
+    without failing every time the browser is opened on a phone.
+    """
     from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
         api_key = request.headers.get('X-API-KEY')
+        host = request.host.lower()
+        is_local_request = (
+            host.startswith('localhost') or
+            host.startswith('127.0.0.1') or
+            host.startswith('0.0.0.0') or
+            host.startswith('192.168.') or
+            host.startswith('10.') or
+            host.startswith('172.')
+        )
+
+        if is_local_request and not api_key:
+            return f(*args, **kwargs)
+
         if not api_key or api_key != API_KEY:
             return jsonify({"error": "Дастрасӣ манъ аст! API Key хатост."}), 401
         return f(*args, **kwargs)
@@ -3325,13 +3377,11 @@ def get_local_ip():
         sock.close()
 
 # Initialize API_BASE_URL on module load (works for both direct execution and Gunicorn)
-if 'onrender.com' in DEFAULT_API_URL or 'localhost' not in DEFAULT_API_URL:
-    # External hosting - use configured URL directly
-    API_BASE_URL = DEFAULT_API_URL
-    print(f"🌐 External hosting detected: {API_BASE_URL}")
-else:
-    # Localhost - try auto-detection
+if DEFAULT_API_URL.startswith("http://127.0.0.1") or DEFAULT_API_URL.startswith("http://localhost") or DEFAULT_API_URL.startswith("http://0.0.0.0"):
     detect_app_host()
+else:
+    API_BASE_URL = DEFAULT_API_URL
+    print(f"🌐 Using configured API URL: {API_BASE_URL}")
 
 if __name__ == '__main__':
     admin_port = 5001

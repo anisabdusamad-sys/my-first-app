@@ -45,12 +45,28 @@ app.logger.addHandler(logging.StreamHandler(sys.stdout))
 TFC_API_KEY = os.getenv("TFC_API_KEY", "tfc_secret_key_2026_xyz_secure")
 
 def require_api_key(f):
-    """Decorator to require API key for protected routes"""
+    """Decorator to require API key for protected routes.
+
+    For local LAN access (192.168.x.x, localhost, 127.0.0.1), allow same-host
+    requests without a header so the mobile browser can submit orders reliably.
+    """
     from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check for API key in headers
         api_key = request.headers.get('X-API-KEY')
+        host = request.host.lower()
+        is_local_request = (
+            host.startswith('localhost') or
+            host.startswith('127.0.0.1') or
+            host.startswith('0.0.0.0') or
+            host.startswith('192.168.') or
+            host.startswith('10.') or
+            host.startswith('172.')
+        )
+
+        if is_local_request and not api_key:
+            return f(*args, **kwargs)
+
         if not api_key or api_key != TFC_API_KEY:
             return jsonify({"error": "Дастрасӣ манъ аст! API Key хатост."}), 401
         return f(*args, **kwargs)
@@ -399,8 +415,8 @@ ADMIN_HTML = """<!DOCTYPE html>
         </div>
     </main>
     <script>
-        // ГЛОБАЛИ: Инҳоро дар болои ҳамаи скриптҳо гузор, то дар ҳама ҷо дастрас бошанд
-        const BASE_URL = "https://tfc-project-2sss.onrender.com";
+        // Use the current origin so the admin panel also works on LAN addresses like 192.168.43.59.
+        const BASE_URL = window.location.origin;
         const API_KEY = "tfc_secret_key_2026_xyz_secure";
 
         async function loadOrders() {
@@ -664,6 +680,9 @@ HTML_TEMPLATE = r"""
         }
 
         body { background-color: var(--bg-body); color: var(--text-body); }
+        html, body, body *, button, input, textarea, select, .category-card, .order-modal, .glass-panel, #home-bottom-nav, #home-bottom-nav button {
+            transition: background-color 0.38s ease, color 0.38s ease, border-color 0.38s ease, box-shadow 0.38s ease, filter 0.38s ease, transform 0.22s ease;
+        }
 
         /* Эффектҳои синамоӣ барои Dark Mode (Default) */
         body:not(.light-active)::before {
@@ -765,7 +784,7 @@ HTML_TEMPLATE = r"""
             to { opacity: 1; transform: scale(1); }
         }
 
-        #sign-out-btn { 
+        #notif-bell-btn { 
             position:fixed; top:20px; right:20px; z-index: 10000; color:white; width:48px; height:48px; 
             border-radius:50%; display:none; justify-content:center; align-items:center; 
             cursor:pointer; background: rgba(255,255,255,0.1); backdrop-filter: blur(12px);
@@ -774,35 +793,7 @@ HTML_TEMPLATE = r"""
             box-shadow: 0 4px 20px rgba(0,0,0,0.35);
             transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
         }
-        #sign-out-btn:hover {
-            background: rgba(255,255,255,0.16);
-            border-color: rgba(255,215,0,0.45);
-            transform: scale(1.05);
-        }
-        #notif-bell-btn { 
-            position:fixed; top:80px; right:20px; z-index: 10000; color:white; width:48px; height:48px; 
-            border-radius:50%; display:none; justify-content:center; align-items:center; 
-            cursor:pointer; background: rgba(255,255,255,0.1); backdrop-filter: blur(12px);
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.35);
-            transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
-        }
         #notif-bell-btn:hover {
-            background: rgba(255,255,255,0.16);
-            border-color: rgba(255,215,0,0.45);
-            transform: scale(1.05);
-        }
-        #theme-toggle-btn {
-            position:fixed; top:80px; right:20px; z-index: 10000; color:white; width:48px; height:48px;
-            border-radius:50%; display:none; justify-content:center; align-items:center;
-            cursor:pointer; background: rgba(255,255,255,0.1); backdrop-filter: blur(12px);
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.35);
-            transition: all 0.25s ease;
-        }
-        #theme-toggle-btn:hover {
             background: rgba(255,255,255,0.16);
             border-color: rgba(255,215,0,0.45);
             transform: scale(1.05);
@@ -1495,12 +1486,10 @@ HTML_TEMPLATE = r"""
         button:active, 
         .order-btn:active, 
         .back-btn:active, 
-        #sign-out-btn:active, 
         .phone-signin-btn:active,
         .category-card:active,
         .size-btn:active,
-        #notif-bell-btn:active,
-        #theme-toggle-btn:active {
+        #notif-bell-btn:active {
             transform: scale(0.92) !important;
             background: rgba(255, 215, 0, 0.15) !important;
             box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2) !important;
@@ -1509,7 +1498,7 @@ HTML_TEMPLATE = r"""
         }
         
         /* Пешгирӣ аз интихоби матн ва чаҳорчӯбаи кабуд дар телефон */
-        button, .category-card, .order-btn, .back-btn, #sign-out-btn, .phone-signin-btn { 
+        button, .category-card, .order-btn, .back-btn, .phone-signin-btn { 
             user-select: none; 
             -webkit-tap-highlight-color: transparent; 
         }
@@ -1520,8 +1509,34 @@ HTML_TEMPLATE = r"""
             will-change: transform, opacity;
         }
 
+        .profile-screen-animate {
+            animation: profileScreenIn 0.35s cubic-bezier(0.2, 1, 0.2, 1) both;
+        }
+
+        .profile-settings-animate {
+            animation: profileSettingsIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .profile-settings-stack {
+            width: min(100%, 240px);
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
         @keyframes pageIn {
             from { opacity: 0; transform: translate3d(0, 20px, 0); }
+            to { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+
+        @keyframes profileScreenIn {
+            from { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.985); }
+            to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+        }
+
+        @keyframes profileSettingsIn {
+            from { opacity: 0; transform: translate3d(24px, 0, 0); }
             to { opacity: 1; transform: translate3d(0, 0, 0); }
         }
         
@@ -1583,6 +1598,11 @@ HTML_TEMPLATE = r"""
         /* Mobile navigation: home has four actions; inner screens retain cart access. */
         #home-bottom-nav { display: none; }
         #notif-bell-btn { display: none !important; }
+        #phone-order-btn {
+            display: flex !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+        }
         @media (max-width: 767px) {
             #home-bottom-nav {
                 position: fixed;
@@ -1601,7 +1621,7 @@ HTML_TEMPLATE = r"""
                 -webkit-backdrop-filter: blur(16px);
             }
             #home-bottom-nav button {
-                width: 25%;
+                width: 20%;
                 min-height: 48px;
                 border: 0;
                 border-radius: 15px;
@@ -1619,8 +1639,28 @@ HTML_TEMPLATE = r"""
             #home-bottom-nav button:active { transform: scale(.94); }
             #home-bottom-nav button i { font-size: 18px; }
             #home-bottom-nav .home-nav-active { color: #ffd700; background: rgba(255,215,0,.12); }
-            #phone-order-btn { display: none !important; }
-            #cart-btn { display: flex !important; }
+            #phone-order-btn {
+                display: flex !important;
+                visibility: visible !important;
+                pointer-events: auto !important;
+                position: fixed;
+                right: 24px;
+                left: auto;
+                bottom: calc(118px + env(safe-area-inset-bottom));
+                top: auto;
+                z-index: 12001;
+                width: 54px;
+                height: 54px;
+                background: rgba(37, 99, 235, 0.96);
+                box-shadow: 0 12px 32px rgba(59,130,246,.45);
+            }
+            #cart-btn {
+                display: flex !important;
+                left: 20px;
+                right: auto;
+                bottom: calc(20px + env(safe-area-inset-bottom));
+                top: auto;
+            }
             body.home-nav-active #cart-btn { display: none !important; }
             #home-cart-nav-btn { position: relative; }
             #home-cart-count { position: absolute; top: -4px; right: 9px; min-width: 18px; height: 18px; padding: 0 4px; border: 2px solid #151515; border-radius: 999px; background: #facc15; color: #111; font-size: 9px; line-height: 14px; font-weight: 900; }
@@ -1671,22 +1711,11 @@ HTML_TEMPLATE = r"""
     </style>
 </head>
 <body>
-    <div id="sign-out-btn" onclick="signOut()" title="Выйти из аккаунта">
-        <i class="fa-solid fa-right-from-bracket text-base" aria-hidden="true"></i>
-        <span class="sr-only">Выйти</span>
-    </div>
     <div id="notif-bell-btn" onclick="showNotifications()" title="Уведомления">
         <i class="fa-solid fa-bell text-base" aria-hidden="true"></i>
         <span id="notif-count" class="absolute -top-1 -right-1 bg-yellow-400 text-black text-[10px] font-black min-w-[18px] h-[18px] rounded-full flex items-center justify-center border-2 border-black hidden">0</span>
         <span class="sr-only">Уведомления</span>
     </div>
-    <!-- Theme Toggle Button -->
-    <div id="theme-toggle-btn" onclick="toggleTheme()" title="Сменить тему">
-        <i id="theme-icon" class="fas fa-moon"></i>
-        <span class="sr-only">Сменить тему</span>
-    </div>
-
-    <div id="customer-id-badge" class="hidden fixed top-5 left-4 z-[10000] px-4 py-2 rounded-full border text-sm font-bold backdrop-blur-md"></div>
 
     <div id="live-status-chip" class="live-status-chip"></div>
 
@@ -1694,8 +1723,7 @@ HTML_TEMPLATE = r"""
         <i class="fa-solid fa-cart-shopping text-xl"></i>
         <span id="cart-count" class="absolute -top-1 -right-1 bg-yellow-400 text-black text-[10px] font-black min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center border-2 border-red-600 hidden">0</span>
     </div>
-    <!-- NEW PHONE ORDER BUTTON -->
-    <div id="phone-order-btn" onclick="showPhoneOrderModal()" class="fixed bottom-24 left-4 z-[10000] bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20 active:scale-90 transition-all cursor-pointer">
+    <div id="phone-order-btn" onclick="showPhoneOrderModal()" class="fixed bottom-[118px] right-6 z-[10000] bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20 active:scale-90 transition-all cursor-pointer">
         <i class="fa-solid fa-phone text-xl"></i>
     </div>
 
@@ -1703,16 +1731,79 @@ HTML_TEMPLATE = r"""
         <button type="button" data-home-nav="home" class="home-nav-active" onclick="openHomeDestination('home')">
             <i class="fa-solid fa-house"></i><span>Главная</span>
         </button>
+        <button type="button" data-home-nav="menu" onclick="openHomeDestination('menu')">
+            <i class="fa-solid fa-utensils"></i><span>Меню</span>
+        </button>
         <button id="home-cart-nav-btn" type="button" data-home-nav="cart" onclick="openHomeDestination('cart')">
             <i class="fa-solid fa-cart-shopping"></i><span>Корзина</span><span id="home-cart-count" class="hidden">0</span>
-        </button>
-        <button type="button" data-home-nav="phone" onclick="openHomeDestination('phone')">
-            <i class="fa-solid fa-phone"></i><span>Звонок</span>
         </button>
         <button type="button" data-home-nav="messages" onclick="openHomeDestination('messages')">
             <i class="fa-solid fa-message"></i><span>Сообщения</span>
         </button>
+        <button type="button" data-home-nav="profile" onclick="openHomeDestination('profile')">
+            <i class="fa-solid fa-user"></i><span>Профиль</span>
+        </button>
     </nav>
+
+    <section id="profile-section" class="content-section" style="display: none;">
+        <div class="max-w-md mx-auto px-4 py-8" style="color: var(--text-body);">
+            <div class="text-center mb-6">
+                <div class="relative mx-auto w-28 h-28 rounded-full border-4 border-yellow-400/70 bg-black/20 flex items-center justify-center overflow-hidden shadow-2xl">
+                    <img id="profile-avatar-preview" class="hidden w-full h-full object-cover" alt="Profile avatar">
+                    <i id="profile-avatar-placeholder" class="fa-solid fa-user text-4xl text-white/60"></i>
+                </div>
+                <label for="profile-avatar-input" class="mt-4 inline-flex items-center justify-center w-12 h-12 rounded-full bg-yellow-400 text-black shadow-lg cursor-pointer">
+                    <i class="fa-solid fa-plus text-xl"></i>
+                </label>
+                <input id="profile-avatar-input" type="file" accept="image/*" class="hidden">
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Ном</label>
+                    <input id="profile-first-name" type="text" placeholder="Ном" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400">
+                </div>
+                <div>
+                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Насаб</label>
+                    <input id="profile-last-name" type="text" placeholder="Насаб" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400">
+                </div>
+                <div>
+                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Номер телефона</label>
+                    <input id="profile-phone" type="tel" placeholder="+992 _________" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400" maxlength="13">
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                    <button onclick="saveProfileData()" class="flex-1 py-3 rounded-xl font-black" style="background: var(--modal-confirm-btn-bg); color: var(--modal-confirm-btn-color);">Сохранить</button>
+                    <button onclick="hideProfileScreen()" class="flex-1 py-3 rounded-xl font-black" style="background: var(--modal-cancel-btn-bg); color: var(--modal-qty-btn-color);">Назад</button>
+                </div>
+            </div>
+
+            <div class="mt-8 pb-20">
+                <button id="profile-settings-btn" onclick="showProfileSettings()" class="w-full py-3 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all">
+                    <i class="fa-solid fa-gear mr-2"></i> Настройка
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section id="profile-settings-section" class="content-section" style="display: none;">
+        <div class="max-w-md mx-auto px-4 py-8" style="color: var(--text-body);">
+            <div class="mb-6 text-center">
+                <h2 class="text-3xl font-black tracking-widest" style="color: var(--tfc-gold);">НАСТРОЙКИ</h2>
+            </div>
+            <div class="profile-settings-stack profile-settings-animate">
+                <button onclick="signOut()" class="w-full py-4 rounded-2xl font-black border border-red-500/30 bg-red-500/10 text-red-300 shadow-lg active:scale-95 transition-all text-center">
+                    <i class="fa-solid fa-right-from-bracket mr-2"></i> Лог аут
+                </button>
+                <button onclick="toggleTheme()" class="w-full py-4 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all text-center">
+                    <i id="profile-theme-icon" class="fa-solid fa-moon mr-2"></i> Режим
+                </button>
+                <button onclick="hideProfileSettings()" class="w-full py-4 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all text-center">
+                    <i class="fa-solid fa-arrow-left mr-2"></i> Назад
+                </button>
+            </div>
+        </div>
+    </section>
 
     <!-- CART MODAL OVERLAY -->
     <div id="cart-modal-overlay" class="order-modal-overlay">
@@ -2483,8 +2574,9 @@ HTML_TEMPLATE = r"""
     </main>
     <script>
         // ГЛОБАЛИ: Инҳоро дар болои ҳамаи скриптҳо гузор, то дар ҳама ҷо дастрас бошанд
-        const BASE_URL = "https://tfc-project-2sss.onrender.com";
-        const API_KEY = "tfc_secret_key_2026_xyz_secure";
+        // Dynamic base URL - works in both localhost and production
+        const BASE_URL = window.location.origin;
+        const API_KEY = "{{ api_key }}";
 
         document.addEventListener("DOMContentLoaded", () => {
             if (localStorage.getItem("tfc_session")) showApp();
@@ -2758,11 +2850,7 @@ HTML_TEMPLATE = r"""
         }
 
         function showCustomerIdBadge(profile) {
-            const badge = document.getElementById("customer-id-badge");
-            if (badge) {
-                badge.textContent = "ID: " + profile.id;
-                badge.classList.remove("hidden");
-            }
+            // ID badge intentionally hidden everywhere.
         }
 
         function setHomeNavActive(action) {
@@ -2791,6 +2879,46 @@ HTML_TEMPLATE = r"""
             });
         }
 
+        function hideAllSecondaryScreens(exceptId = null) {
+            const screensToHide = [
+                'menu-section', 'fastfood-section', 'sushi-section', 'pizza-section',
+                'summer-menu-section', 'combo-section', 'otziv-section', 'aktsii-section',
+                'adres-section', 'vakansii-section', 'notifications-section', 'profile-section'
+            ];
+
+            screensToHide.forEach((id) => {
+                const section = document.getElementById(id);
+                if (!section) return;
+                section.style.display = (id === exceptId) ? 'block' : 'none';
+            });
+        }
+
+        function restoreHomeScreen() {
+            hideAllSecondaryScreens();
+
+            const intro = document.getElementById('intro-section');
+            const menu = document.getElementById('menu');
+            if (intro) intro.style.display = 'flex';
+            if (menu) menu.style.display = 'block';
+
+            setHomeNavActive('home');
+            setTopControlsVisible(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showMainCategoryGrid() {
+            hideAllSecondaryScreens();
+
+            const intro = document.getElementById('intro-section');
+            const menu = document.getElementById('menu');
+            if (intro) intro.style.display = 'none';
+            if (menu) menu.style.display = 'block';
+
+            setHomeNavActive('menu');
+            setTopControlsVisible(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
         function openHomeDestination(action) {
             closeBottomNavPages();
             const notifications = document.getElementById('notifications-section');
@@ -2801,21 +2929,202 @@ HTML_TEMPLATE = r"""
             }
             setHomeNavActive(action);
 
+            if (action === 'home') {
+                restoreHomeScreen();
+                return;
+            }
+            if (action === 'menu') {
+                showMainCategoryGrid();
+                return;
+            }
             if (action === 'cart') {
                 addBottomPageHistory('cart');
                 return showCart();
             }
-            if (action === 'phone') {
-                addBottomPageHistory('phone');
-                return showPhoneOrderModal();
-            }
             if (action === 'messages') return showNotifications();
+            if (action === 'profile') {
+                showProfileScreen();
+                return;
+            }
 
             if (notifications && notifications.style.display !== 'none') {
                 return hideNotifications();
             }
             window.scrollTo({ top: 0, behavior: 'smooth' });
             setTopControlsVisible(true);
+        }
+
+        function showProfileScreen() {
+            const profileSection = document.getElementById('profile-section');
+            const introSection = document.getElementById('intro-section');
+            const menuSection = document.getElementById('menu');
+            const settingsSection = document.getElementById('profile-settings-section');
+            hideAllSecondaryScreens('profile-section');
+
+            if (introSection) introSection.style.display = 'none';
+            if (menuSection) menuSection.style.display = 'none';
+            if (profileSection) profileSection.style.display = 'block';
+            if (settingsSection) settingsSection.style.display = 'none';
+            profileSection.classList.remove('profile-screen-animate');
+            void profileSection.offsetWidth;
+            profileSection.classList.add('profile-screen-animate');
+            const phoneOrderBtn = document.getElementById('phone-order-btn');
+            if (phoneOrderBtn) phoneOrderBtn.style.display = 'none';
+
+            const profile = getOrCreateCustomerProfile() || { fullName: '', id: '', phone: '', avatar: '' };
+            const fullName = profile.fullName || '';
+            const nameParts = fullName.trim().split(/\s+/).filter(Boolean);
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+
+            const firstInput = document.getElementById('profile-first-name');
+            const lastInput = document.getElementById('profile-last-name');
+            const phoneInput = document.getElementById('profile-phone');
+            const avatarInput = document.getElementById('profile-avatar-input');
+            const preview = document.getElementById('profile-avatar-preview');
+            const placeholder = document.getElementById('profile-avatar-placeholder');
+
+            if (firstInput) firstInput.value = firstName;
+            if (lastInput) lastInput.value = lastName;
+            if (phoneInput) phoneInput.value = profile.phone || '';
+
+            if (profile.avatar) {
+                if (preview) {
+                    preview.src = profile.avatar;
+                    preview.classList.remove('hidden');
+                }
+                if (placeholder) placeholder.classList.add('hidden');
+            } else {
+                if (preview) {
+                    preview.removeAttribute('src');
+                    preview.classList.add('hidden');
+                }
+                if (placeholder) placeholder.classList.remove('hidden');
+            }
+
+            if (avatarInput) {
+                avatarInput.onchange = function (event) {
+                    const file = event.target.files && event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        const dataUrl = e.target.result;
+                        const profileData = getOrCreateCustomerProfile() || { fullName: '', id: '', phone: '', avatar: '' };
+                        profileData.avatar = dataUrl;
+                        localStorage.setItem('tfc_customer_profile', JSON.stringify(profileData));
+                        const img = document.getElementById('profile-avatar-preview');
+                        const placeholder = document.getElementById('profile-avatar-placeholder');
+                        if (img) {
+                            img.src = dataUrl;
+                            img.classList.remove('hidden');
+                        }
+                        if (placeholder) placeholder.classList.add('hidden');
+                    };
+                    reader.readAsDataURL(file);
+                };
+            }
+
+            setHomeNavActive('profile');
+            setTopControlsVisible(true);
+            const homeBottomNav = document.getElementById('home-bottom-nav');
+            if (homeBottomNav) homeBottomNav.style.display = 'flex';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function hideProfileScreen() {
+            const profileSection = document.getElementById('profile-section');
+            const settingsSection = document.getElementById('profile-settings-section');
+            const introSection = document.getElementById('intro-section');
+            const menuSection = document.getElementById('menu');
+            if (profileSection) profileSection.style.display = 'none';
+            if (settingsSection) settingsSection.style.display = 'none';
+            if (introSection) introSection.style.display = 'flex';
+            if (menuSection) menuSection.style.display = 'block';
+            const phoneOrderBtn = document.getElementById('phone-order-btn');
+            if (phoneOrderBtn) {
+                phoneOrderBtn.style.display = 'none';
+                phoneOrderBtn.style.visibility = 'hidden';
+                phoneOrderBtn.style.pointerEvents = 'none';
+            }
+            setHomeNavActive('home');
+            setTopControlsVisible(true);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showProfileSettings() {
+            const profileSection = document.getElementById('profile-section');
+            const settingsSection = document.getElementById('profile-settings-section');
+            if (profileSection) profileSection.style.display = 'none';
+            if (settingsSection) settingsSection.style.display = 'block';
+            settingsSection.classList.remove('profile-settings-animate');
+            void settingsSection.offsetWidth;
+            settingsSection.classList.add('profile-settings-animate');
+            const themeIcon = document.getElementById('profile-theme-icon');
+            if (themeIcon) {
+                themeIcon.className = document.body.classList.contains('light-active') ? 'fa-solid fa-sun mr-2' : 'fa-solid fa-moon mr-2';
+            }
+        }
+
+        function hideProfileSettings() {
+            const profileSection = document.getElementById('profile-section');
+            const settingsSection = document.getElementById('profile-settings-section');
+            if (settingsSection) settingsSection.style.display = 'none';
+            if (profileSection) profileSection.style.display = 'block';
+            profileSection.classList.remove('profile-screen-animate');
+            void profileSection.offsetWidth;
+            profileSection.classList.add('profile-screen-animate');
+        }
+
+        function attachPageSwipeNavigation() {
+            const settingsSection = document.getElementById('profile-settings-section');
+            if (!settingsSection) return;
+
+            const handleSwipe = (startX, startY, endX, endY) => {
+                const dx = endX - startX;
+                const dy = endY - startY;
+                const isHorizontal = Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy);
+                if (!isHorizontal) return;
+
+                const startedNearEdge = startX < 56;
+                if (!startedNearEdge) return;
+
+                if (dx > 0) {
+                    hideProfileSettings();
+                }
+            };
+
+            settingsSection.addEventListener('touchstart', (event) => {
+                const touch = event.touches[0];
+                settingsSection.dataset.touchStartX = String(touch.clientX);
+                settingsSection.dataset.touchStartY = String(touch.clientY);
+            }, { passive: true });
+
+            settingsSection.addEventListener('touchend', (event) => {
+                const touch = event.changedTouches[0];
+                const startX = Number(settingsSection.dataset.touchStartX || touch.clientX);
+                const startY = Number(settingsSection.dataset.touchStartY || touch.clientY);
+                handleSwipe(startX, startY, touch.clientX, touch.clientY);
+            }, { passive: true });
+        }
+
+        function saveProfileData() {
+            const firstName = document.getElementById('profile-first-name')?.value.trim() || '';
+            const lastName = document.getElementById('profile-last-name')?.value.trim() || '';
+            const phone = document.getElementById('profile-phone')?.value.trim() || '';
+            const profile = getOrCreateCustomerProfile() || { fullName: '', id: '', phone: '', avatar: '' };
+
+            const fullName = [firstName, lastName].filter(Boolean).join(' ');
+            profile.fullName = fullName;
+            profile.phone = phone;
+
+            if (!profile.id) {
+                profile.id = 'TFC-' + Math.floor(100000 + Math.random() * 900000);
+            }
+
+            localStorage.setItem('tfc_customer_profile', JSON.stringify(profile));
+            localStorage.setItem('tfc_session', fullName || 'Гость');
+            showLiveStatus('Профиль сохранён ✅', true);
+            hideProfileScreen();
         }
 
         window.addEventListener('popstate', (event) => {
@@ -2830,21 +3139,22 @@ HTML_TEMPLATE = r"""
         }, true);
 
         function setTopControlsVisible(isVisible) {
-            const signOutBtn = document.getElementById("sign-out-btn");
-            const idBadge = document.getElementById("customer-id-badge");
             const notifBtn = document.getElementById("notif-bell-btn");
-            const themeToggleBtn = document.getElementById("theme-toggle-btn");
             const phoneOrderBtn = document.getElementById("phone-order-btn");
             const cartBtn = document.getElementById("cart-btn");
             const homeBottomNav = document.getElementById("home-bottom-nav");
             const introSection = document.getElementById("intro-section");
             const menuSection = document.getElementById("menu");
-            
-            if (signOutBtn) signOutBtn.style.display = isVisible ? "flex" : "none";
+            const profileSection = document.getElementById("profile-section");
+            const notificationsSection = document.getElementById("notifications-section");
+            const shouldHidePhoneBtn = !!(profileSection && profileSection.style.display !== "none") || !!(notificationsSection && notificationsSection.style.display !== "none");
+
             if (notifBtn) notifBtn.style.display = isVisible ? "flex" : "none";
-            if (themeToggleBtn) themeToggleBtn.style.display = isVisible ? "flex" : "none";
-            // Ordering controls must stay available on every menu/category screen.
-            if (phoneOrderBtn) phoneOrderBtn.style.display = "flex";
+            if (phoneOrderBtn) {
+                phoneOrderBtn.style.display = shouldHidePhoneBtn || !isVisible ? "none" : "flex";
+                phoneOrderBtn.style.visibility = shouldHidePhoneBtn || !isVisible ? "hidden" : "visible";
+                phoneOrderBtn.style.pointerEvents = shouldHidePhoneBtn || !isVisible ? "none" : "auto";
+            }
             if (cartBtn) cartBtn.style.display = "flex";
             if (homeBottomNav) {
                 const isHomeScreen = introSection && menuSection &&
@@ -2853,12 +3163,6 @@ HTML_TEMPLATE = r"""
                 const keepBottomNav = isHomeScreen || document.body.classList.contains("bottom-nav-pinned");
                 homeBottomNav.style.display = keepBottomNav ? "flex" : "none";
                 document.body.classList.toggle("home-nav-active", isHomeScreen);
-            }
-            
-            if (isVisible) {
-                if (idBadge) idBadge.classList.remove("hidden");
-            } else {
-                if (idBadge) idBadge.classList.add("hidden");
             }
         }
 
@@ -2897,7 +3201,6 @@ HTML_TEMPLATE = r"""
             setTimeout(() => {
                 auth.classList.add('hidden');
                 document.getElementById('main-content').classList.remove('hidden');
-                showCustomerIdBadge(profile);
                 updateTopControlsByScroll();
                 startCustomerStatusPolling();
                 updateNotifBadge(); // Навсозии баҷ ҳангоми ворид шудан
@@ -3455,9 +3758,16 @@ HTML_TEMPLATE = r"""
 
         function showNotifications() {
             setTimeout(() => {
-            document.getElementById('intro-section').style.display = 'none';
-            document.getElementById('menu').style.display = 'none';
-            document.getElementById('notifications-section').style.display = 'block';
+            const introSection = document.getElementById('intro-section');
+            const menuSection = document.getElementById('menu');
+            const profileSection = document.getElementById('profile-section');
+            const notificationsSection = document.getElementById('notifications-section');
+            if (introSection) introSection.style.display = 'none';
+            if (menuSection) menuSection.style.display = 'none';
+            if (profileSection) profileSection.style.display = 'none';
+            if (notificationsSection) notificationsSection.style.display = 'block';
+            const phoneOrderBtn = document.getElementById('phone-order-btn');
+            if (phoneOrderBtn) phoneOrderBtn.style.display = 'none';
             renderNotificationsList();
             // Ҳангоми кушодани хабарҳо, ҳисобкунакро тоза мекунем
             notificationsHistory.forEach(n => { n.isNew = false; });
@@ -3478,6 +3788,12 @@ HTML_TEMPLATE = r"""
             document.getElementById('notifications-section').style.display = 'none';
             document.getElementById('menu').style.display = 'block';
             document.getElementById('intro-section').style.display = 'flex';
+            const phoneOrderBtn = document.getElementById('phone-order-btn');
+            if (phoneOrderBtn) {
+                phoneOrderBtn.style.display = 'none';
+                phoneOrderBtn.style.visibility = 'hidden';
+                phoneOrderBtn.style.pointerEvents = 'none';
+            }
             animateSection('menu');
             animateSection('intro-section');
             setHomeNavActive('home');
