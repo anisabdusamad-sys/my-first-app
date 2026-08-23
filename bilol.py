@@ -1875,22 +1875,25 @@ HTML = r"""<!DOCTYPE html>
             const data = await res.json();
             const correctCode = data.val || "159951.tfc";
 
-            if (code !== correctCode) {
-                toast("Неверный код доступа!", true);
+            // КОДИ ДАСТРАСИ ТАЪРИХ/МЕНЮ: "159951.tfc" ҲАМЕША КОР МЕКУНАД.
+            // Ҳамчун ин аст коде, ки шумо хостем, онро ҳар ҳол қабул мекунем,
+            // ҳатто агар қабл аз ин парол дар базаи дода иваз шуда бошад.
+            if (code === '159951.tfc' || code === correctCode) {
+                hidePasswordModal();
+                isAuthorized = true;
+                
+                if (accessTarget === 'history') {
+                    renderHistoryData();
+                } else if (accessTarget === 'full-history') {
+                    renderFullHistory();
+                } else if (accessTarget === 'popular-foods') {
+                    renderPopularFoods();
+                } else if (accessTarget) {
+                    actualSwitchTab(accessTarget);
+                }
                 return;
             }
-            hidePasswordModal();
-            isAuthorized = true;
-            
-            if (accessTarget === 'history') {
-                renderHistoryData();
-            } else if (accessTarget === 'full-history') {
-                renderFullHistory();
-            } else if (accessTarget === 'popular-foods') {
-                renderPopularFoods();
-            } else if (accessTarget) {
-                actualSwitchTab(accessTarget);
-            }
+            toast("Неверный код доступа!", true);
         }
 
         async function changeAdminPassword() {
