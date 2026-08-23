@@ -44,6 +44,12 @@ app.logger.addHandler(logging.StreamHandler(sys.stdout))
 # API Key for inter-app communication
 TFC_API_KEY = os.getenv("TFC_API_KEY", "tfc_secret_key_2026_xyz_secure")
 
+# МУҲИМ: API_KEY-ро ба ҳамаи шаблонҳо интиқол медиҳем, то {{ api_key }} дар JavaScript холӣ нашавад.
+# (Холӣ будани ин тағйирёбанда дар Render сабаби хатогии 401 ва "Не удалось отправить заказ" буд)
+@app.context_processor
+def inject_api_key():
+    return {"api_key": TFC_API_KEY}
+
 def require_api_key(f):
     """Decorator to require API key for protected routes.
 
@@ -3909,8 +3915,28 @@ HTML_TEMPLATE = r"""
 
         window.addEventListener("scroll", updateTopControlsByScroll);
 
+        // =====================================================================
+        // Суроғаи Admin Panel (bilol.py):
+        //   - Дар localhost (ё шабакаи маҳаллӣ) → сервери маҳаллии 5001
+        //   - Дар сервер (Render) → домени нави админ-панел
+        // =====================================================================
         function adminApiBase() {
-            return BASE_URL;
+            const host = window.location.hostname;
+            const isLocal = (
+                host === "localhost" || host === "127.0.0.1" ||
+                host === "0.0.0.0" || host === "::1" || host === "[::1]"
+            );
+            const isLan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+
+            if (isLocal) {
+                return "http://127.0.0.1:5001"; // Админ-панели маҳаллӣ
+            }
+            if (isLan) {
+                // Дар шабакаи маҳаллӣ админ-панел дар ҳамон IP, порти 5001 кор мекунад
+                return window.location.protocol + "//" + host + ":5001";
+            }
+            // Production (Render ва ғайра)
+            return "https://my-first-app-2-akqv.onrender.com";
         }
 
         let selectedOrderPayload = null;
