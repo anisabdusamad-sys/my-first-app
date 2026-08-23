@@ -2731,6 +2731,9 @@ def add_cors_headers(resp):
     # аз нав менависем, чунки танзими кӯҳнаи "Allow-Origin: *" ва
     # "Allow-Headers: Content-Type" (бе X-API-KEY) сабаби рад шудани
     # дархостҳои заказ аз сайти клиент буд.
+    if resp.mimetype == "text/html":
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
     if request.path.startswith("/static/images/"):
         resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return resp

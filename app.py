@@ -23,6 +23,16 @@ CORS(app, resources={r"/api/*": {
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "X-API-KEY"]
 }})
+
+
+@app.after_request
+def no_cache_html(resp):
+    # Барои он ки браузер саҳифаи кӯҳнаро бо JS-и қаблӣ кэш накунад
+    # (масалан пас аз деплойи нав дар Render саҳифаи кӯҳна намоиш дода нашавад)
+    if resp.mimetype == "text/html":
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
 UPLOAD_FOLDER = 'static/images'
 
 # Configure logging for better visibility in Render
@@ -423,7 +433,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <script>
         // Use the current origin so the admin panel also works on LAN addresses like 192.168.43.59.
         const BASE_URL = window.location.origin;
-        const API_KEY = "tfc_secret_key_2026_xyz_secure";
+        const API_KEY = "{{ api_key }}";
 
         async function loadOrders() {
             const res = await fetch(`${BASE_URL}/api/orders/since?last_id=0`, {
@@ -3916,27 +3926,16 @@ HTML_TEMPLATE = r"""
         window.addEventListener("scroll", updateTopControlsByScroll);
 
         // =====================================================================
-        // Суроғаи Admin Panel (bilol.py):
-        //   - Дар localhost (ё шабакаи маҳаллӣ) → сервери маҳаллии 5001
-        //   - Дар сервер (Render) → домени нави админ-панел
+        // Суроғаи API барои заказ: ҳамаи дархостҳо ба худи ҳамин сервер (app.py) мераванд.
+        //   Ин дар localhost ҳам ва дар Render ҳам 100% кор мекунад, чунки:
+        //     1) Same-origin → хатогии CORS ҳеҷ гоҳ ба вуҷуд намеояд;
+        //     2) API Key аз ҳамин сервер гирифта мешавад ({{ api_key }}) ва ҳатман
+        //        бо калиди сервер мувофиқ аст → хатои 401 намешавад;
+        //     3) Заказҳо дар базаи app.py сабт мешаванд, ки админ-панел (bilol.py)
+        //        тавассути /api/orders/since худкор онҳоро мебинад.
         // =====================================================================
         function adminApiBase() {
-            const host = window.location.hostname;
-            const isLocal = (
-                host === "localhost" || host === "127.0.0.1" ||
-                host === "0.0.0.0" || host === "::1" || host === "[::1]"
-            );
-            const isLan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
-
-            if (isLocal) {
-                return "http://127.0.0.1:5001"; // Админ-панели маҳаллӣ
-            }
-            if (isLan) {
-                // Дар шабакаи маҳаллӣ админ-панел дар ҳамон IP, порти 5001 кор мекунад
-                return window.location.protocol + "//" + host + ":5001";
-            }
-            // Production (Render ва ғайра)
-            return "https://my-first-app-2-akqv.onrender.com";
+            return BASE_URL;
         }
 
         let selectedOrderPayload = null;

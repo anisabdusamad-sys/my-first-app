@@ -117,9 +117,54 @@ ra = ac.get("/")
 ha = ra.get_data(as_text=True)
 check("GET / (клиент) -> 200", ra.status_code == 200, f"status={ra.status_code}")
 check("{{ api_key }} интиқол ёфтааст (холӣ нест)", ('const API_KEY = "' + app_module.TFC_API_KEY + '"') in ha)
-check("adminApiBase -> домени Render мавҷуд аст", ADMIN_ORIGIN in ha)
-check("adminApiBase -> 127.0.0.1:5001 барои localhost", "127.0.0.1:5001" in ha)
+check("adminApiBase -> ба sherи худ (BASE_URL) бармегардад",
+      ("function adminApiBase() {" in ha and "return BASE_URL;" in ha))
+check("URL-и админ (my-first-app-2) дигар дар клиент сахткор нест", "my-first-app-2-akqv.onrender.com" not in ha)
 check("URL-и кӯҳнаи 'localhost:5001' боқӣ намондааст", "localhost:5001" not in ha)
+check("Саҳифаи HTML cache-карда намешавад (no-store)", "no-store" in (ra.headers.get("Cache-Control") or ""),
+      f"Cache-Control={ra.headers.get('Cache-Control')!r}")
+
+# --- Ҳамин табии "фиристодани заказ аз браузер": POST-и same-origin ба /api/orders/new ---
+tmp2 = tempfile.mktemp(suffix=".db")
+cn2 = sqlite3.connect(tmp2)
+cn2.executescript("""
+CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, customer TEXT, customer_id TEXT, food TEXT,
+ price TEXT, phone TEXT, delivery_type TEXT, tip TEXT, delivery_latitude TEXT, delivery_longitude TEXT,
+ delivery_address TEXT, payment_method TEXT, payment_phone TEXT, qabyl INTEGER, omoda INTEGER, dostavka INTEGER,
+ estimated_time INTEGER, created TEXT);
+CREATE TABLE full_order_history (id INTEGER PRIMARY KEY AUTOINCREMENT, customer TEXT, customer_id TEXT,
+ food TEXT, price TEXT, phone TEXT, delivery_type TEXT, tip TEXT, payment_method TEXT, created TEXT);
+CREATE TABLE revenue_history (id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL, day TEXT, customer_id TEXT);
+""")
+cn2.commit(); cn2.close()
+orig_db_path = app_module.DB_PATH
+app_module.DB_PATH = tmp2
+
+order_payload = '{"customer":"Тест Client","customer_id":"verify-client","food":"Пицца","price":"35","phone":"888888888","delivery_type":"delivery","payment_method":"cash"}'
+ro = ac.post("/api/orders/new", data=order_payload, content_type="application/json",
+             headers={"X-API-KEY": app_module.TFC_API_KEY})
+do = ro.get_json(silent=True)
+check("POST /api/orders/new (same-origin, мисли браузер) -> ok=True",
+      ro.status_code == 200 and isinstance(do, dict) and do.get("ok") is True,
+      f"status={ro.status_code} body={do}")
+check("order_id баргаштааст (status-pulling ба кор медарояд)",
+      bool(isinstance(do, dict) and do.get("order_id")), f"order_id={do.get('order_id') if isinstance(do, dict) else None}")
+r5 = ac.get("/api/orders/since?last_id=0", headers={"X-API-KEY": app_module.TFC_API_KEY})
+d5 = r5.get_json(silent=True)
+orders_found = isinstance(d5, dict) and any(o.get("customer_id") == "verify-client" for o in d5.get("orders", []))
+check("Заказ дар /api/orders/since мавҷуд аст (админ онро мебинад)", orders_found)
+
+app_module.DB_PATH = orig_db_path
+try:
+    os.remove(tmp2)
+except OSError:
+    pass
+
+# --- Саҳифаи /admin-и app.py низ API_KEY-и дурустро дорад ---
+radm = ac.get("/admin")
+hadm = radm.get_data(as_text=True)
+check("GET /admin -> 200", radm.status_code == 200, f"status={radm.status_code}")
+check("/admin API_KEY аз шаблон меояд", ('const API_KEY = "' + app_module.TFC_API_KEY + '"') in hadm)
 
 rb = ac.options("/api/orders/new", headers={
     "Origin": ADMIN_ORIGIN,
