@@ -943,6 +943,42 @@ HTML_TEMPLATE = r"""
             background: rgba(255, 255, 255, 0.9) !important;
             border-color: rgba(0, 0, 0, 0.1) !important;
         }
+        body.light-active #profile-section,
+        body.light-active #profile-settings-section {
+            color: #000 !important;
+        }
+        body.light-active #profile-section label,
+        body.light-active #profile-settings-section h2,
+        body.light-active #profile-settings-section button,
+        body.light-active #profile-section input::placeholder,
+        body.light-active #profile-section input,
+        body.light-active #profile-section button {
+            color: #111111 !important;
+        }
+        body.light-active #profile-section input {
+            background: rgba(255,255,255,0.95) !important;
+            border-color: rgba(0,0,0,0.12) !important;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.04) !important;
+        }
+        body.light-active #profile-section input:focus {
+            border-color: rgba(228, 0, 43, 0.45) !important;
+            box-shadow: 0 0 0 3px rgba(228, 0, 43, 0.12) !important;
+        }
+        body.light-active #profile-avatar-placeholder {
+            color: rgba(0, 0, 0, 0.7) !important;
+        }
+        body.light-active #profile-settings-btn,
+        body.light-active #profile-settings-section button {
+            background: rgba(255, 255, 255, 0.92) !important;
+            border-color: rgba(0, 0, 0, 0.12) !important;
+            color: #111111 !important;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08) !important;
+        }
+        body.light-active #profile-settings-section button[onclick="signOut()"] {
+            background: rgba(220, 38, 38, 0.08) !important;
+            border-color: rgba(220, 38, 38, 0.3) !important;
+            color: #b91c1c !important;
+        }
 
         /* Ранги сурхи зебо барои иконкаҳои категория ва чаҳорчӯбаи онҳо дар режими рӯшноӣ */
         body.light-active .category-card {
@@ -1599,9 +1635,9 @@ HTML_TEMPLATE = r"""
         #home-bottom-nav { display: none; }
         #notif-bell-btn { display: none !important; }
         #phone-order-btn {
-            display: flex !important;
-            visibility: visible !important;
-            pointer-events: auto !important;
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
         @media (max-width: 767px) {
             #home-bottom-nav {
@@ -1640,9 +1676,9 @@ HTML_TEMPLATE = r"""
             #home-bottom-nav button i { font-size: 18px; }
             #home-bottom-nav .home-nav-active { color: #ffd700; background: rgba(255,215,0,.12); }
             #phone-order-btn {
-                display: flex !important;
-                visibility: visible !important;
-                pointer-events: auto !important;
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
                 position: fixed;
                 right: 24px;
                 left: auto;
@@ -1722,9 +1758,6 @@ HTML_TEMPLATE = r"""
     <div id="cart-btn" onclick="showCart()" class="fixed bottom-5 left-4 z-[10000] bg-red-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20 active:scale-90 transition-all cursor-pointer">
         <i class="fa-solid fa-cart-shopping text-xl"></i>
         <span id="cart-count" class="absolute -top-1 -right-1 bg-yellow-400 text-black text-[10px] font-black min-w-[24px] h-6 px-1 rounded-full flex items-center justify-center border-2 border-red-600 hidden">0</span>
-    </div>
-    <div id="phone-order-btn" onclick="showPhoneOrderModal()" class="fixed bottom-[118px] right-6 z-[10000] bg-blue-600 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20 active:scale-90 transition-all cursor-pointer">
-        <i class="fa-solid fa-phone text-xl"></i>
     </div>
 
     <nav id="home-bottom-nav" aria-label="Навигатсияи асосӣ">
@@ -1839,31 +1872,6 @@ HTML_TEMPLATE = r"""
         </div>
     </div>
 
-    <!-- PHONE ORDER MODAL OVERLAY -->
-    <div id="phone-order-modal-overlay" class="order-modal-overlay">
-        <div class="order-modal">
-            <div class="px-6 py-5 border-b border-white/10 flex items-start justify-between">
-                <div>
-                    <p class="text-xs uppercase tracking-[3px] text-white/40">Связь с нами</p>
-                    <h3 class="text-2xl font-black mt-1">Заказ по телефону</h3>
-                </div>
-                <button onclick="closePhoneOrderModal()" class="w-10 h-10 rounded-full transition" style="background: var(--modal-qty-btn-bg); color: var(--modal-qty-btn-color);">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-            <div class="px-6 py-5 text-center">
-                <div class="w-20 h-20 bg-blue-600/20 text-blue-400 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-[0_0_30px_rgba(59,130,246,0.2)]">
-                    <i class="fa-solid fa-phone-volume"></i>
-                </div>
-                <p class="text-white/60 text-sm mb-6 leading-relaxed">
-                    Для оформления заказа или получения консультации, пожалуйста, позвоните нам.
-                </p>
-                <a href="tel:754169090" class="w-full py-4 bg-blue-600 text-white font-black rounded-2xl active:scale-95 transition shadow-lg shadow-blue-500/20 uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                    <i class="fas fa-phone"></i> ЗВОНИТЬ И ЗАКАЗАТЬ
-                </a>
-            </div>
-        </div>
-    </div>
 
     <!-- МОДАЛИ ТАСДИҚИ НЕСТ КАРДАНИ ХАБАРҲО -->
     <div id="notif-clear-modal-overlay" class="order-modal-overlay">
@@ -2811,42 +2819,14 @@ HTML_TEMPLATE = r"""
             return null;
         }
 
-        function toggleTheme(event) {
-            const toggle = () => {
-                document.body.classList.toggle('light-active');
-                const isLight = document.body.classList.contains('light-active');
-                const themeIcon = document.getElementById('theme-icon');
-                if (themeIcon) themeIcon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
-                localStorage.setItem('tfc_theme', isLight ? 'light' : 'dark');
-            };
-
-            if (!document.startViewTransition) {
-                toggle();
-                return;
-            }
-
-            const x = event ? event.clientX : window.innerWidth / 2;
-            const y = event ? event.clientY : window.innerHeight / 2;
-            const endRadius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
-
-            const transition = document.startViewTransition(toggle);
-
-            transition.ready.then(() => {
-                const clipPath = [
-                    `circle(0px at ${x}px ${y}px)`,
-                    `circle(${endRadius}px at ${x}px ${y}px)`,
-                ];
-                document.documentElement.animate(
-                    {
-                        clipPath: document.body.classList.contains('light-active') ? clipPath : [...clipPath].reverse(),
-                    },
-                    {
-                        duration: 650,
-                        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-                        pseudoElement: document.body.classList.contains('light-active') ? '::view-transition-new(root)' : '::view-transition-old(root)',
-                    }
-                );
-            });
+        function toggleTheme() {
+            document.body.classList.toggle('light-active');
+            const isLight = document.body.classList.contains('light-active');
+            const themeIcon = document.getElementById('theme-icon');
+            if (themeIcon) themeIcon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
+            const profileThemeIcon = document.getElementById('profile-theme-icon');
+            if (profileThemeIcon) profileThemeIcon.className = isLight ? 'fa-solid fa-sun mr-2' : 'fa-solid fa-moon mr-2';
+            localStorage.setItem('tfc_theme', isLight ? 'light' : 'dark');
         }
 
         function showCustomerIdBadge(profile) {
@@ -3147,18 +3127,20 @@ HTML_TEMPLATE = r"""
             const menuSection = document.getElementById("menu");
             const profileSection = document.getElementById("profile-section");
             const notificationsSection = document.getElementById("notifications-section");
-            const shouldHidePhoneBtn = !!(profileSection && profileSection.style.display !== "none") || !!(notificationsSection && notificationsSection.style.display !== "none");
+            const isHomeScreen = !!(introSection && menuSection && introSection.style.display !== "none" && menuSection.style.display !== "none");
+            const isHomeLandingScreen = isHomeScreen && window.scrollY <= 40;
+            const shouldHidePhoneBtn = !!(profileSection && profileSection.style.display !== "none") ||
+                !!(notificationsSection && notificationsSection.style.display !== "none") ||
+                !isHomeLandingScreen || !isVisible;
 
             if (notifBtn) notifBtn.style.display = isVisible ? "flex" : "none";
             if (phoneOrderBtn) {
-                phoneOrderBtn.style.display = shouldHidePhoneBtn || !isVisible ? "none" : "flex";
-                phoneOrderBtn.style.visibility = shouldHidePhoneBtn || !isVisible ? "hidden" : "visible";
-                phoneOrderBtn.style.pointerEvents = shouldHidePhoneBtn || !isVisible ? "none" : "auto";
+                phoneOrderBtn.style.display = shouldHidePhoneBtn ? "none" : "flex";
+                phoneOrderBtn.style.visibility = shouldHidePhoneBtn ? "hidden" : "visible";
+                phoneOrderBtn.style.pointerEvents = shouldHidePhoneBtn ? "none" : "auto";
             }
             if (cartBtn) cartBtn.style.display = "flex";
             if (homeBottomNav) {
-                const isHomeScreen = introSection && menuSection &&
-                    introSection.style.display !== "none" && menuSection.style.display !== "none";
                 if (isHomeScreen) document.body.classList.remove("bottom-nav-pinned");
                 const keepBottomNav = isHomeScreen || document.body.classList.contains("bottom-nav-pinned");
                 homeBottomNav.style.display = keepBottomNav ? "flex" : "none";
@@ -3718,22 +3700,17 @@ HTML_TEMPLATE = r"""
         }
 
         async function deleteReview(id) {
-            const code = prompt("Введите код для удаления:");
-            if (code === "anis1234") {
-                const res = await fetch(`${BASE_URL}/api/reviews/delete/${id}`, { 
-                    method: 'POST',
-                    headers: {
-                        'X-API-KEY': API_KEY
-                    }
-                });
-                const data = await res.json();
-                if (data.ok) {
-                    location.reload();
-                } else {
-                    alert("Ошибка при удалении.");
+            const res = await fetch(`${BASE_URL}/api/reviews/delete/${id}`, { 
+                method: 'POST',
+                headers: {
+                    'X-API-KEY': API_KEY
                 }
-            } else if (code !== null) {
-                alert("Неверный код!");
+            });
+            const data = await res.json();
+            if (data.ok) {
+                location.reload();
+            } else {
+                alert("Ошибка при удалении.");
             }
         }
         // Бор кардани таърихи хабарҳо аз хотираи браузер ҳангоми оғоз
@@ -4116,6 +4093,12 @@ HTML_TEMPLATE = r"""
         }
 
         function showCart() {
+            const phoneOrderBtn = document.getElementById('phone-order-btn');
+            if (phoneOrderBtn) {
+                phoneOrderBtn.style.display = 'none';
+                phoneOrderBtn.style.visibility = 'hidden';
+                phoneOrderBtn.style.pointerEvents = 'none';
+            }
             renderCart();
             const overlay = document.getElementById('cart-modal-overlay');
             overlay.classList.add('active', 'full-page-view');
@@ -4265,25 +4248,6 @@ HTML_TEMPLATE = r"""
                 renderCart();
             }});
         }
-
-        function showPhoneOrderModal() {
-            const overlay = document.getElementById('phone-order-modal-overlay');
-            overlay.classList.add('active', 'full-page-view');
-        }
-
-        function closePhoneOrderModal() {
-            if (bottomPageInHistory) {
-                history.back();
-                return;
-            }
-            const overlay = document.getElementById('phone-order-modal-overlay');
-            overlay.classList.remove('active', 'full-page-view');
-            setHomeNavActive('home');
-            if (document.getElementById('intro-section').style.display !== 'none' && document.getElementById('menu').style.display !== 'none') {
-                setTopControlsVisible(true);
-            }
-        }
-
 
         async function confirmFullCartOrder(e) {
             if (cart.length === 0) return alert("Корзина пуста!");
@@ -4556,13 +4520,12 @@ HTML_TEMPLATE = r"""
 
         function showLiveStatus(message, isOk) {
             // Илова ба таърихи хабарҳо
-            notificationsHistory.push({ message, isOk, time: new Date().toLocaleTimeString('ru-RU'), isNew: true });
-            notificationsHistory.push({ 
-                message, 
-                isOk, 
-                time: new Date().toLocaleTimeString('ru-RU'), 
-                timestamp: Date.now(), 
-                isNew: true 
+            notificationsHistory.push({
+                message,
+                isOk,
+                time: new Date().toLocaleTimeString('ru-RU'),
+                timestamp: Date.now(),
+                isNew: true
             });
             // Захира кардан дар localStorage
             localStorage.setItem("tfc_notifications_history", JSON.stringify(notificationsHistory));
