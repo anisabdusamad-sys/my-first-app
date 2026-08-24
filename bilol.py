@@ -28,27 +28,11 @@ def get_local_ip():
         sock.close()
 
 
-def _is_render_env():
-    """Оё ин код дар Render (ё дигар сервери берунӣ) иҷро мешавад?"""
-    return bool(
-        os.getenv("RENDER")
-        or os.getenv("RENDER_EXTERNAL_HOSTNAME")
-        or "onrender.com" in socket.gethostname().lower()
-    )
-
-
-# Domainҳои Render (агар доменҳо тағйир ёбанд, тавассути .env: CLIENT_URL / TFC_API_URL)
-RENDER_CLIENT_URL = "https://my-first-app-1-4t5v.onrender.com"  # Сайти клиент (app.py)
-RENDER_ADMIN_URL = "https://my-first-app-2-akqv.onrender.com"   # Админ-панел (bilol.py)
-
-
 def build_local_origins():
     local_ip = get_local_ip()
     candidate_urls = [
         os.getenv("CLIENT_URL"),
         os.getenv("TFC_API_URL"),
-        RENDER_CLIENT_URL,
-        RENDER_ADMIN_URL,
         f"http://{local_ip}:5000",
         f"http://{local_ip}:5001",
         "http://localhost:3000",
@@ -69,12 +53,10 @@ def build_local_origins():
 
 
 # CORS configuration for bilol.py backend API
-# МУҲИМ: сайти клиент (https://my-first-app-1-4t5v.onrender.com) ба ин бекенд
-# дархостҳои cross-origin мефиристад, бинобар ин домени он ҳатман дар рӯйхат бояд бошад.
-CLIENT_URL = os.getenv("CLIENT_URL") or (RENDER_CLIENT_URL if _is_render_env() else f"http://{get_local_ip()}:5000")
+CLIENT_URL = os.getenv("CLIENT_URL") or os.getenv("TFC_API_URL") or f"http://{get_local_ip()}:5000"
 LOCAL_ORIGINS = build_local_origins()
 CORS(app, resources={r"/api/*": {
-    "origins": LOCAL_ORIGINS,
+    "origins": [CLIENT_URL] + LOCAL_ORIGINS,
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "X-API-KEY"]
 }})
@@ -83,12 +65,16 @@ UPLOAD_FOLDER = 'static/images'
 IMAGE_MAX_SIZE = (1200, 1200)
 IMAGE_WEBP_QUALITY = 78
 
-# API Base URL for inter-app communication (суроғаи app.py — манбаи асосии маълумот)
-# Дар Render — сайти клиент дар Render; дар локал — LAN IP, то телефон ҳам дастрас бошад.
-if _is_render_env():
-    DEFAULT_API_URL = os.getenv("TFC_API_URL", RENDER_CLIENT_URL)
-else:
-    DEFAULT_API_URL = os.getenv("TFC_API_URL") or f"http://{get_local_ip()}:5000"
+# API Base URL for inter-app communication
+# Эҳтимолии рендер: TFC_API_URL (агар гузошта шуд) → вагарна дар Render → URL-и app.py → вагарна localhost.
+DEFAULT_API_URL = os.getenv("TFC_API_URL")
+if not DEFAULT_API_URL:
+    if os.environ.get("RENDER_EXTERNAL_URL"):
+        # Дар Render (admin-panel) бояд ба app.py-ии публикӣ пайваст шавад.
+        DEFAULT_API_URL = "https://my-first-app-1-4t5v.onrender.com"
+    else:
+        DEFAULT_API_URL = f"http://{get_local_ip()}:5000"
+DEFAULT_API_URL = DEFAULT_API_URL.rstrip("/")
 API_BASE_URL = DEFAULT_API_URL
 
 def detect_app_host():
@@ -100,12 +86,9 @@ def detect_app_host():
         if response.status_code == 200:
             data = response.json()
             if data.get("ok"):
-                # Тозакунӣ: пасвандҳои "/" ва "/api" нест мекунем,
-                # зеро дар JavaScript баъд "/api/..." худаш илова мешавад
-                detected = (data.get("api_url") or "").strip().rstrip("/")
-                if detected.endswith("/api"):
-                    detected = detected[:-4]
-                API_BASE_URL = detected or DEFAULT_API_URL
+                # ИСТОПУДЬ: истифодаи "host" (бе /api), зеро JS худаш /api/... зам зам мезанад.
+                # Агар "api_url"-ро истифода кунем, URLи /api/api-и дугона мешавад ва пайваст намешавад.
+                API_BASE_URL = data["host"]
                 print(f"✅ Auto-detected app host: {API_BASE_URL}")
                 return
     except Exception as e:
@@ -115,11 +98,8 @@ def detect_app_host():
     API_BASE_URL = DEFAULT_API_URL
     print(f"ℹ️ Using configured API URL: {API_BASE_URL}")
 
-# Auto-detect on module load (танҳо барои localhost; дар Render URL аллакай маълум аст)
-if DEFAULT_API_URL.startswith(("http://127.0.0.1", "http://localhost", "http://0.0.0.0")):
-    detect_app_host()
-else:
-    print(f"🌐 Using configured API URL: {API_BASE_URL}")
+# Auto-detect on module load
+detect_app_host()
 
 # Калидҳо бояд бо app.py якхела бошанд
 VAPID_PUBLIC_KEY = "BCX7B8_p9v7Z-S-l1M0W4Y1Z2X3C4V5B6N7M8L9K0J1I2H3G4F5E6D7C8B9A0S1D2F3G4H5J6K7L8"
@@ -129,34 +109,6 @@ VAPID_CLAIMS = {"sub": "mailto:admin@tfc-kulob.tj"}
 API_KEY = os.getenv("TFC_API_KEY", "tfc_secret_key_2026_xyz_secure")
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "tfc_admin.db"))
-
-
-def app_api_root():
-    """Решаи URL-и app.py (бе '/api' дар охир), масалан: https://my-first-app-1-4t5v.onrender.com"""
-    base = (API_BASE_URL or DEFAULT_API_URL or "").strip().rstrip("/")
-    if base.endswith("/api"):
-        base = base[:-4]
-    return base
-
-
-def forward_to_app(method, path, **kwargs):
-    """Даъвати API-и app.py (манбаи асосии маълумот).
-
-    Баргардонидан: (status_code, json_body) ё (None, None) — агар app.py дастрас набошад.
-    """
-    try:
-        url = app_api_root() + path
-        headers = {"X-API-KEY": API_KEY}
-        resp = requests.request(method, url, headers=headers, timeout=20, **kwargs)
-        try:
-            body = resp.json()
-        except ValueError:
-            body = None
-        return resp.status_code, body
-    except Exception as e:
-        print(f"⚠️ app.py дастрас нест ({app_api_root()}): {e}")
-        return None, None
-
 
 def require_api_key(f):
     """Decorator to require API key for protected routes.
@@ -1347,7 +1299,7 @@ HTML = r"""<!DOCTYPE html>
 
     <script>
         const STORAGE_KEY = 'tfc_admin_orders_v2';
-        const API_KEY = '{{ api_key }}';
+        const API_KEY = 'tfc_secret_key_2026_xyz_secure';
         const API_BASE_URL = '{{ API_BASE_URL }}';
         let orders = [];
         let filterMode = 'all';
@@ -2715,9 +2667,9 @@ HTML = r"""<!DOCTYPE html>
 
 @app.route('/')
 def admin_panel():
-    # API_BASE_URL ва api_key ҳатман бояд ба шаблон интиқол ёбанд,
-    # то {{ API_BASE_URL }} ва {{ api_key }} дар JavaScript холӣ намонанд
-    return render_template_string(HTML, API_BASE_URL=API_BASE_URL, api_key=API_KEY)
+    # ИСТОПУГ: API_BASE_URL-ро ба шаблон гузарони лозим аст, вагарна {{ API_BASE_URL }} холӣ мемонад
+    # ва JS-и админ ба URL-и дуруст пайваст карда намешавад.
+    return render_template_string(HTML, API_BASE_URL=API_BASE_URL)
 
 @app.route('/admin_manifest.json')
 def serve_admin_manifest():
@@ -2726,14 +2678,10 @@ def serve_admin_manifest():
 
 @app.after_request
 def add_cors_headers(resp):
-    # МУҲИМ: Сарлагҳои CORS ("Access-Control-Allow-*")-ро flask_cors танзим мекунад
-    # (бингар ба CORS(app, ...) дар болои файл). Дар ин ҷо дигар онҳоро дастӣ
-    # аз нав менависем, чунки танзими кӯҳнаи "Allow-Origin: *" ва
-    # "Allow-Headers: Content-Type" (бе X-API-KEY) сабаби рад шудани
-    # дархостҳои заказ аз сайти клиент буд.
-    if resp.mimetype == "text/html":
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
+    # Allow menu website (other port) to send orders
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     if request.path.startswith("/static/images/"):
         resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
     return resp
@@ -2811,16 +2759,6 @@ def api_orders_new():
         return ("", 204)
 
     data = request.get_json(silent=True) or {}
-
-    # 1) Пеш аз ҳама заказро ба app.py интиқол (forward) медиҳем,
-    #    зеро app.py манбаи асосии маълумот аст — админ-панел заказонро аз он мегирад.
-    status, body = forward_to_app("POST", "/api/orders/new", json=data)
-    if status == 200 and isinstance(body, dict) and body.get("ok"):
-        return jsonify(body)
-    if status is not None:
-        print(f"⚠️ Forward to app.py failed (HTTP {status}); order stored locally.")
-
-    # 2) Fallback: нигоҳдории маҳаллӣ (агар app.py дастрас набошад)
     customer = (data.get("customer") or "Неизвестно").strip()
     customer_id = str(data.get("customer_id") or "").strip()
     food = (data.get("food") or "Блюдо").strip()
@@ -2860,7 +2798,6 @@ def api_orders_new():
     return jsonify(
         {
             "ok": True,
-            "order_id": order_id,
             "order": {
                 "id": order_id,
                 "customer": customer,
@@ -3110,12 +3047,6 @@ def api_orders_customer_status():
     if not customer_id:
         return jsonify({"ok": True, "orders": []})
 
-    # 1) Proxy ба app.py — ҳолати воқеии заказон (qabyl/omoda) дар базаи app.py нигоҳ дошта мешавад
-    status, body = forward_to_app("GET", "/api/orders/customer-status", params={"customer_id": customer_id})
-    if status == 200 and isinstance(body, dict) and body.get("ok"):
-        return jsonify(body)
-
-    # 2) Fallback: хондан аз базаи маҳаллӣ
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cur = conn.cursor()
     cur.execute(
@@ -3457,11 +3388,11 @@ def get_local_ip():
         sock.close()
 
 # Initialize API_BASE_URL on module load (works for both direct execution and Gunicorn)
-if _is_render_env():
+if DEFAULT_API_URL.startswith("http://127.0.0.1") or DEFAULT_API_URL.startswith("http://localhost") or DEFAULT_API_URL.startswith("http://0.0.0.0"):
+    detect_app_host()
+else:
     API_BASE_URL = DEFAULT_API_URL
     print(f"🌐 Using configured API URL: {API_BASE_URL}")
-else:
-    detect_app_host()
 
 if __name__ == '__main__':
     admin_port = 5001

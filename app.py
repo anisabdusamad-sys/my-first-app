@@ -23,16 +23,6 @@ CORS(app, resources={r"/api/*": {
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "X-API-KEY"]
 }})
-
-
-@app.after_request
-def no_cache_html(resp):
-    # Барои он ки браузер саҳифаи кӯҳнаро бо JS-и қаблӣ кэш накунад
-    # (масалан пас аз деплойи нав дар Render саҳифаи кӯҳна намоиш дода нашавад)
-    if resp.mimetype == "text/html":
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-    return resp
 UPLOAD_FOLDER = 'static/images'
 
 # Configure logging for better visibility in Render
@@ -53,12 +43,6 @@ app.logger.addHandler(logging.StreamHandler(sys.stdout))
 
 # API Key for inter-app communication
 TFC_API_KEY = os.getenv("TFC_API_KEY", "tfc_secret_key_2026_xyz_secure")
-
-# МУҲИМ: API_KEY-ро ба ҳамаи шаблонҳо интиқол медиҳем, то {{ api_key }} дар JavaScript холӣ нашавад.
-# (Холӣ будани ин тағйирёбанда дар Render сабаби хатогии 401 ва "Не удалось отправить заказ" буд)
-@app.context_processor
-def inject_api_key():
-    return {"api_key": TFC_API_KEY}
 
 def require_api_key(f):
     """Decorator to require API key for protected routes.
@@ -433,7 +417,7 @@ ADMIN_HTML = """<!DOCTYPE html>
     <script>
         // Use the current origin so the admin panel also works on LAN addresses like 192.168.43.59.
         const BASE_URL = window.location.origin;
-        const API_KEY = "{{ api_key }}";
+        const API_KEY = "tfc_secret_key_2026_xyz_secure";
 
         async function loadOrders() {
             const res = await fetch(`${BASE_URL}/api/orders/since?last_id=0`, {
@@ -3925,15 +3909,6 @@ HTML_TEMPLATE = r"""
 
         window.addEventListener("scroll", updateTopControlsByScroll);
 
-        // =====================================================================
-        // Суроғаи API барои заказ: ҳамаи дархостҳо ба худи ҳамин сервер (app.py) мераванд.
-        //   Ин дар localhost ҳам ва дар Render ҳам 100% кор мекунад, чунки:
-        //     1) Same-origin → хатогии CORS ҳеҷ гоҳ ба вуҷуд намеояд;
-        //     2) API Key аз ҳамин сервер гирифта мешавад ({{ api_key }}) ва ҳатман
-        //        бо калиди сервер мувофиқ аст → хатои 401 намешавад;
-        //     3) Заказҳо дар базаи app.py сабт мешаванд, ки админ-панел (bilol.py)
-        //        тавассути /api/orders/since худкор онҳоро мебинад.
-        // =====================================================================
         function adminApiBase() {
             return BASE_URL;
         }
@@ -5232,12 +5207,17 @@ def food_detail(food_id):
 
 @app.route("/api/host-info", methods=["GET"])
 def api_host_info():
-    """Return the current host URL for inter-app communication"""
-    host = request.host_url.rstrip('/')
+    """Return the current host URL for inter-app communication.
+
+    Дар Render сарвари ба пушти прокси асту, бинобар request.host_url метавонад
+    нишонаи инт.netона (internal) бош. RENDER_EXTERNAL_URL-об cу en версаем барои
+    гирифтани URL-и публикӣ-и app.py.
+    """
+    public_host = (os.environ.get("RENDER_EXTERNAL_URL") or request.host_url).rstrip("/")
     return jsonify({
         "ok": True,
-        "host": host,
-        "api_url": f"{host}/api"
+        "host": public_host,
+        "api_url": f"{public_host}/api"
     })
 
 def get_local_ip():
