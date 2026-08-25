@@ -10,6 +10,7 @@ from pywebpush import webpush, WebPushException
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from dotenv import load_dotenv
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 # Load environment variables
 load_dotenv()
@@ -42,6 +43,40 @@ def add_security_and_cors_headers(resp):
         resp.headers["Cache-Control"] = "no-store"
     return resp
 UPLOAD_FOLDER = 'static/images'
+IMAGE_MAX_SIZE = (1200, 1200)
+IMAGE_WEBP_QUALITY = 78
+
+def save_uploaded_media(file, prefix=""):
+    """Save an uploaded image/video, converting images to WebP (same as bilol.py)."""
+    if not file or file.filename == "":
+        return ""
+
+    original_name = secure_filename(file.filename)
+    stem, ext = os.path.splitext(original_name)
+    ext = ext.lower()
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    base_name = f"{prefix}{timestamp}_{stem}"
+
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
+
+    if ext in (".mp4", ".webm", ".mov", ".ogg"):
+        saved_name = f"{base_name}{ext}"
+        file.save(os.path.join(UPLOAD_FOLDER, saved_name))
+        return saved_name
+
+    try:
+        image = Image.open(file.stream)
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail(IMAGE_MAX_SIZE, Image.Resampling.LANCZOS)
+        saved_name = f"{base_name}.webp"
+        image.save(os.path.join(UPLOAD_FOLDER, saved_name), "WEBP", quality=IMAGE_WEBP_QUALITY, method=6)
+        return saved_name
+    except (UnidentifiedImageError, OSError):
+        saved_name = f"{base_name}{ext or '.bin'}"
+        file.stream.seek(0)
+        file.save(os.path.join(UPLOAD_FOLDER, saved_name))
+        return saved_name
 
 # Configure logging for better visibility in Render
 import logging
@@ -5173,8 +5208,8 @@ def api_orders_customer_status():
 @require_api_key
 def api_foods_list():
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
-    cur.execute("SELECT id, name, price, category, image_url, description FROM foods"); rows = cur.fetchall(); conn.close()
-    return jsonify({"ok": True, "foods": [{"id": r[0], "name": r[1], "price": r[2], "category": r[3], "image_url": r[4], "description": r[5]} for r in rows]})
+    cur.execute("SELECT id, name, price, category, image_url, description, subcategory FROM foods ORDER BY category, subcategory, name ASC"); rows = cur.fetchall(); conn.close()
+    return jsonify({"ok": True, "foods": [{"id": r[0], "name": r[1], "price": r[2], "category": r[3], "image_url": r[4], "description": r[5], "subcategory": r[6] if len(r) > 6 else ""} for r in rows]})
 
 def get_orders():
     try:
@@ -5283,6 +5318,271 @@ def get_local_ip():
         return "127.0.0.1"
     finally:
         sock.close()
+
+# =====================================================================
+# АДМИН-API РОУТҲО (барои панели админ bilol.py)
+# Ин роутҳо бояд дар app.py бошанд, зеро панели админ (my-first-app-2)
+# ҳамаи fetch-ҳояшро ба API_BASE_URL (app.py / my-first-app-1) мефиристад.
+# Пеш аз ин: 404 → тасдиқи PIN иҷро намешуд ва саҳифа кушода намешуд.
+# =====================================================================
+@app.route("/api/settings/get", methods=["GET"])
+@require_api_key
+def api_get_setting():
+    key = request.args.get("key")
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("SELECT value FROM settings WHERE key = ?", (key,)); r = cur.fetchone(); conn.close()
+    return jsonify({"ok": True, "val": r[0] if r else ""})
+
+@app.route("/api/settings/set", methods=["POST"])
+@require_api_key
+def api_set_setting():
+    data = request.get_json() or {}
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (data.get('key'), data.get('val')))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/stats/daily-revenue", methods=["GET"])
+@require_api_key
+def api_daily_revenue():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(DISTINCT customer_id), SUM(amount), day FROM revenue_history GROUP BY day")
+    rows = cur.fetchall()
+    conn.close()
+    stats = [{"day": r[2], "total": round(r[1], 2), "count": r[0]} for r in rows]
+    stats.sort(key=lambda x: x['day'], reverse=True)
+    return jsonify({"ok": True, "stats": stats})
+
+@app.route("/api/stats/popular-foods", methods=["GET"])
+@require_api_key
+def api_popular_foods():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("SELECT food, price FROM full_order_history")
+    rows = cur.fetchall()
+    conn.close()
+    aggregated = {}
+    for food_str, price_str in rows:
+        try:
+            p_clean = "".join(c for c in str(price_str).replace(',', '.') if c.isdigit() or c == '.')
+            price = float(p_clean) if p_clean else 0.0
+        except Exception:
+            price = 0.0
+        items = [i.strip() for i in str(food_str or '').split(',')]
+        for item_str in items:
+            clean_item = re.sub(r'^\d+\.\s*', '', item_str)
+            match = re.search(r'^(.*?)\s+x(\d+)$', clean_item)
+            if match:
+                base_name = match.group(1).strip()
+                qty = int(match.group(2))
+            else:
+                base_name = clean_item.strip()
+                qty = 1
+            if base_name not in aggregated:
+                aggregated[base_name] = {"count": 0, "total": 0.0}
+            aggregated[base_name]["count"] += qty
+            if item_str == items[0]:
+                aggregated[base_name]["total"] += price
+    stats = [{"food": k, "count": v["count"], "total": v["total"]} for k, v in aggregated.items()]
+    stats.sort(key=lambda x: x['count'], reverse=True)
+    return jsonify({"ok": True, "stats": stats})
+
+@app.route("/api/stats/clear-history", methods=["POST"])
+@require_api_key
+def api_stats_clear_history():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM revenue_history")
+    cur.execute("DELETE FROM sqlite_sequence WHERE name='revenue_history'")
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/orders/full-history", methods=["GET"])
+@require_api_key
+def api_full_order_history():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("SELECT customer, customer_id, food, price, phone, delivery_type, created, payment_method FROM full_order_history")
+    rows = cur.fetchall()
+    conn.close()
+    history = [
+        {"customer": r[0], "customer_id": r[1], "food": r[2], "price": r[3], "phone": r[4], "delivery_type": r[5], "created": r[6], "payment_method": r[7] if len(r) > 7 else "online"}
+        for r in rows
+    ]
+    return jsonify({"ok": True, "history": history})
+
+@app.route("/api/orders/clear-full-history", methods=["POST"])
+@require_api_key
+def api_clear_full_history():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM full_order_history")
+    cur.execute("DELETE FROM sqlite_sequence WHERE name='full_order_history'")
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/orders/clear-all", methods=["POST"])
+@require_api_key
+def api_orders_clear_all():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM orders")
+    cur.execute("DELETE FROM sqlite_sequence WHERE name='orders'")
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/orders/delete/<int:order_id>", methods=["DELETE"])
+@require_api_key
+def api_order_delete_db(order_id):
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return jsonify({"ok": ok})
+
+@app.route("/api/foods/add", methods=["POST", "OPTIONS"])
+@require_api_key
+def api_foods_add():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    name = request.form.get("name", "").strip()
+    price = request.form.get("price", "").strip()
+    category = request.form.get("category", "Меню").strip()
+    subcategory = request.form.get("subcategory", "").strip()
+    description = request.form.get("description", "").strip()
+    image_url = request.form.get("image_url", "").strip()
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename != '':
+            image_url = save_uploaded_media(file)
+    if not name or not price:
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO foods (name, price, category, subcategory, image_url, description, created) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, price, category, subcategory, image_url, description, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        food_id = cur.lastrowid
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "food": {"id": food_id, "name": name, "price": price, "category": category, "image_url": image_url}})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"ok": False, "error": "duplicate_name"}), 400
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/foods/update/<int:food_id>", methods=["PUT", "OPTIONS"])
+@require_api_key
+def api_foods_update(food_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+    name = request.form.get("name", "").strip()
+    price = request.form.get("price", "").strip()
+    category = request.form.get("category", "Меню").strip()
+    subcategory = request.form.get("subcategory", "").strip()
+    description = request.form.get("description", "").strip()
+    image_url = request.form.get("image_url", "").strip()
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename != '':
+            image_url = save_uploaded_media(file)
+    if not name or not price:
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE foods SET name = ?, price = ?, category = ?, subcategory = ?, image_url = ?, description = ? WHERE id = ?",
+            (name, price, category, subcategory, image_url, description, food_id),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return jsonify({"ok": updated})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"ok": False, "error": "duplicate_name"}), 400
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/foods/delete/<int:food_id>", methods=["DELETE", "OPTIONS"])
+@require_api_key
+def api_foods_delete(food_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM foods WHERE id = ?", (food_id,))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return jsonify({"ok": deleted})
+
+@app.route("/api/aktsii/list", methods=["GET"])
+@require_api_key
+def api_aktsii_list():
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("SELECT id, title, price, description, image_url, created FROM aktsii ORDER BY id DESC")
+    rows = cur.fetchall(); conn.close()
+    return jsonify({"ok": True, "aktsii": [{"id": r[0], "title": r[1], "price": r[2], "description": r[3], "image_url": r[4], "created": r[5]} for r in rows]})
+
+@app.route("/api/aktsii/add", methods=["POST", "OPTIONS"])
+@require_api_key
+def api_aktsii_add():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    title = request.form.get("title", "").strip()
+    price = request.form.get("price", "").strip()
+    description = request.form.get("description", "").strip()
+    image_url = ""
+    if not title or not price or not description:
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename != '':
+            image_url = save_uploaded_media(file, prefix="promo_")
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("INSERT INTO aktsii (title, price, description, image_url, created) VALUES (?, ?, ?, ?, ?)",
+                (title, price, description, image_url, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/aktsii/delete/<int:aktsii_id>", methods=["DELETE", "OPTIONS"])
+@require_api_key
+def api_aktsii_delete(aktsii_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("DELETE FROM aktsii WHERE id = ?", (aktsii_id,))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/customers/list", methods=["GET"])
+@require_api_key
+def api_customers_list():
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("SELECT full_name, customer_id, created FROM customers ORDER BY id DESC")
+    rows = cur.fetchall(); conn.close()
+    return jsonify({"ok": True, "customers": [{"full_name": r[0], "customer_id": r[1], "created": r[2]} for r in rows]})
+
+@app.route("/api/customers/delete/<string:customer_id>", methods=["DELETE"])
+@require_api_key
+def api_customers_delete(customer_id):
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM customers WHERE customer_id = ?", (customer_id,))
+    conn.commit()
+    ok = cur.rowcount > 0
+    conn.close()
+    return jsonify({"ok": ok})
 
 if __name__ == '__main__':
     # Рендер худаш ба таври автоматӣ порт медиҳад. Ин сатр барои Render ҳаётан муҳим аст!

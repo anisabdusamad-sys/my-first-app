@@ -1306,7 +1306,9 @@ HTML = r"""<!DOCTYPE html>
         let revenueChart = null;
         let accessTarget = null;
         let confirmAction = null;
-        let isAuthorized = false;
+        // Нигоҳ доштани ҳолати авторизатсия дар sessionStorage — пас аз refresh
+        // корбар набояд аз нав PIN-ро ворид кунад.
+        let isAuthorized = sessionStorage.getItem('tfc_admin_authorized') === '1';
         let lastSeenOrderId = 0;
 
         const newOrderSound = new Audio('/static/music.mp3'); // Файли садоӣ бояд дар папкаи static бошад
@@ -1822,10 +1824,14 @@ HTML = r"""<!DOCTYPE html>
 
         async function verifyHistoryCode() {
             const code = document.getElementById('history-access-code').value;
-            
-            const res = await fetch(`${API_BASE_URL}/api/settings/get?key=admin_password`, { headers: apiHeaders() });
-            const data = await res.json();
-            const correctCode = data.val || "159951.tfc";
+            let correctCode = "159951.tfc";
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/settings/get?key=admin_password`, { headers: apiHeaders() });
+                const data = await res.json();
+                if (data && data.val) correctCode = data.val;
+            } catch (e) {
+                console.warn('Не удалось получить пароль из настроек — используем стандартный', e);
+            }
 
             if (code !== correctCode) {
                 toast("Неверный код доступа!", true);
@@ -1833,6 +1839,7 @@ HTML = r"""<!DOCTYPE html>
             }
             hidePasswordModal();
             isAuthorized = true;
+            sessionStorage.setItem('tfc_admin_authorized', '1');
             
             if (accessTarget === 'history') {
                 renderHistoryData();
@@ -1863,7 +1870,7 @@ HTML = r"""<!DOCTYPE html>
             const oldPass = document.getElementById('old-pass-input').value;
             const newPass = document.getElementById('new-pass-input').value;
 
-            const res = await fetch(`${API_BASE_URL}/api/settings/get?key=admin_password`);
+            const res = await fetch(`${API_BASE_URL}/api/settings/get?key=admin_password`, { headers: apiHeaders() });
             const data = await res.json();
             const currentStored = data.val || "159951.tfc";
 
