@@ -1,0 +1,36 @@
+======================================================================
+1) Тафтиши bilol.py (админ-панел)
+======================================================================
+[FAIL] CORS домени клиенти Render-ро дорад | origins=['http://192.168.43.59:5000', 'http://192.168.43.59:5001', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5000', 'http://127.0.0.1:5000', 'http://localhost:5001', 'http://127.0.0.1:5001']
+[FAIL] CORS домени админро низ дорад
+[PASS] OPTIONS preflight /api/orders/new -> 204/200 | status=204
+[FAIL] Access-Control-Allow-Origin == домени клиент | got='*'
+[FAIL] Allow-Headers Content-Type/X-API-KEY | got='CONTENT-TYPE'
+[PASS] GET customer-status -> 200 | status=200
+[FAIL] ACOA дар GET | got='*'
+[PASS] POST /api/orders/new (fallback) -> ok=True | status=200 body={'ok': True, 'order': {'created': '2026-08-24 12:12:23', 'customer': 'Тест', 'customer_id': 'verify-test', 'food': 'Паста', 'id': 1, 'omoda': False, 'phone': '999999999', 'price': '25', 'qabyl': False}}
+[FAIL] order_id дар ҷавоб мавҷуд аст | order_id=None
+[FAIL] ACOA дар POST | got='*'
+[PASS] GET / (админ) -> 200 | status=200
+[PASS] API_BASE_URL дар шаблон дуруст аст
+[PASS] API_KEY дар шаблон холӣ нест
+
+======================================================================
+2) Тафтиши app.py (сайти клиент)
+======================================================================
+[PASS] GET / (клиент) -> 200 | status=200
+[FAIL] {{ api_key }} интиқол ёфтааст (холӣ нест)
+[PASS] adminApiBase -> ба sherи худ (BASE_URL) бармегардад
+[PASS] URL-и админ (my-first-app-2) дигар дар клиент сахткор нест
+[PASS] URL-и кӯҳнаи 'localhost:5001' боқӣ намондааст
+[FAIL] Саҳифаи HTML cache-карда намешавад (no-store) | Cache-Control=None
+[PASS] POST /api/orders/new (same-origin, мисли браузер) -> ok=True | status=200 body={'ok': True, 'order_id': 1}
+[PASS] order_id баргаштааст (status-pulling ба кор медарояд) | order_id=1
+[PASS] Заказ дар /api/orders/since мавҷуд аст (админ онро мебинад)
+[PASS] GET /admin -> 200 | status=200
+[PASS] /admin API_KEY аз шаблон меояд
+[PASS] app.py CORS preflight | got='https://my-first-app-2-akqv.onrender.com'
+
+======================================================================
+НАТИҶА: 9 хато ❌ -> ['CORS домени клиенти Render-ро дорад', 'CORS домени админро низ дорад', 'Access-Control-Allow-Origin == домени клиент', 'Allow-Headers Content-Type/X-API-KEY', 'ACOA дар GET', 'order_id дар ҷавоб мавҷуд аст', 'ACOA дар POST', '{{ api_key }} интиқол ёфтааст (холӣ нест)', 'Саҳифаи HTML cache-карда намешавад (no-store)']
+======================================================================
