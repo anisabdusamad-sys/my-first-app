@@ -16,13 +16,31 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# БА ҶОИ CORS-И КӮҲНА ИНРО ГУЗОР:
-# Ин имкон медиҳад, ки фронтенди ту аз дилхоҳ домен (аз ҷумла Render) ба ин беканд коннект шавад
-CORS(app, resources={r"/api/*": {
-    "origins": "*",
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "X-API-KEY"]
-}})
+# =====================================================================
+# CORS — БАРОИ ҲАМАИ РОУТҲО ВА ҲАМАИ ORIGIN-ҲО (Render full enable)
+# Ин имкон медиҳад, ки:
+#   - Клиент (https://my-first-app-1-4t5v.onrender.com) заказ фиристад
+#   - Админ (https://my-first-app-2-akqv.onrender.com) ба API пайваст шавад
+# "origins": "*" маънои ҳама доменҳоро дорад (аз ҷумла ҳарду Render-домен).
+# =====================================================================
+CORS(app,
+     resources={r"/*": {"origins": "*"}},
+     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+     allow_headers=["Content-Type", "X-API-KEY", "Authorization"],
+     supports_credentials=False)
+
+@app.after_request
+def add_security_and_cors_headers(resp):
+    """Ба ҳамаи ҷавобҳо ҳедерҳои CORS меафзояд ва саҳифаҳои HTML/API-ро cache намекунад."""
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-KEY, Authorization"
+    if request.method == "OPTIONS":
+        resp.status_code = 204
+    ct = (resp.headers.get("Content-Type") or "").lower()
+    if ct.startswith("text/html") or ct.startswith("application/json"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 UPLOAD_FOLDER = 'static/images'
 
 # Configure logging for better visibility in Render
@@ -4048,10 +4066,15 @@ HTML_TEMPLATE = r"""
                 }),
             })
                 .then(function (r) {
-                    return r.json();
+                    return r.json()
+                        .catch(function () { return {}; })
+                        .then(function (data) {
+                            return { ok: r.ok, data: data };
+                        });
                 })
-                .then(function (data) {
-                    if (data && data.ok) {
+                .then(function (res) {
+                    var data = res.data || {};
+                    if (res.ok && data.ok) {
                         const msg = "Ваш заказ <b>отправлен</b>! ✅";
                         latestCustomerStatus = data.order_id + "_pending";
                         localStorage.setItem("tfc_last_notified_status", latestCustomerStatus);
@@ -4061,7 +4084,8 @@ HTML_TEMPLATE = r"""
                         // Очищаем адрес после использования
                         sessionStorage.removeItem('delivery_address');
                     } else {
-                        alert("Не удалось отправить заказ.");
+                        var errMsg = (data && data.error) ? data.error : "Попробуйте ещё раз.";
+                        alert("Не удалось отправить заказ. " + errMsg);
                     }
                 })
                 .catch(function (error) {
@@ -4972,7 +4996,14 @@ def api_orders_new():
     if request.method == "OPTIONS":
         return ("", 204)
 
-    data = request.get_json() or {}
+    # Қабули дурусти JSON (агар body JSON набошад — 400 бармегардонад)
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "Данные заказа должны быть в JSON"}), 400
+
     customer = data.get("customer", "No-name")
     customer_id = data.get("customer_id", "")
     food = data.get("food", "")
@@ -4986,34 +5017,57 @@ def api_orders_new():
     payment_method = data.get("payment_method", "online")
     payment_phone = data.get("payment_phone", "")
 
+    if not customer or not food:
+        return jsonify({"ok": False, "error": "customer ва food хатмианд"}), 400
+
     if not tip:
         tip = "Наличными 💵" if payment_method == "cash" else f"Картой 💳 ({payment_phone})"
     created = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    cur = conn.cursor() # Ensure timeout is applied here
-    # Insert bo hamai maydonho baroi durust namoyish shudan dar admin
-    cur.execute("""
-        INSERT INTO orders (customer, customer_id, food, price, phone, delivery_type, tip, delivery_latitude, delivery_longitude, delivery_address, payment_method, qabyl, omoda, dostavka, created)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
-    """, (customer, customer_id, food, price, phone, delivery_type, tip, delivery_latitude, delivery_longitude, delivery_address, payment_method, created))
-    order_id = cur.lastrowid
-    
-    # Сабти заказ дар таърихи доимӣ (Архив), то пас аз нест кардан боқӣ монад
-    cur.execute(
-        "INSERT INTO full_order_history (customer, customer_id, food, price, phone, delivery_type, tip, payment_method, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (customer, customer_id, food, price, phone, delivery_type, tip, payment_method, created)
-    )
 
-    # Сабти маблағ дар таърихи доимӣ
     try:
-        p_clean = "".join(c for c in str(price).replace(',', '.') if c.isdigit() or c == '.')
-        amount = float(p_clean) if p_clean else 0.0
-        cur.execute("INSERT INTO revenue_history (amount, day, customer_id) VALUES (?, ?, ?)", (amount, datetime.now().strftime("%Y-%m-%d"), customer_id))
-    except: pass
+        conn = sqlite3.connect(DB_PATH, timeout=20)
+        cur = conn.cursor()  # Ensure timeout is applied here
+        # Insert bo hamai maydonho baroi durust namoyish shudan dar admin
+        cur.execute("""
+            INSERT INTO orders (customer, customer_id, food, price, phone, delivery_type, tip, delivery_latitude, delivery_longitude, delivery_address, payment_method, qabyl, omoda, dostavka, created)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
+        """, (customer, customer_id, food, price, phone, delivery_type, tip, delivery_latitude, delivery_longitude, delivery_address, payment_method, created))
+        order_id = cur.lastrowid
 
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "order_id": order_id})
+        # Сабти заказ дар таърихи доимӣ (Архив), то пас аз нест кардан боқӣ монад
+        try:
+            cur.execute(
+                "INSERT INTO full_order_history (customer, customer_id, food, price, phone, delivery_type, tip, payment_method, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (customer, customer_id, food, price, phone, delivery_type, tip, payment_method, created)
+            )
+        except sqlite3.Error as e:
+            print(f"full_order_history write skipped: {e}")
+
+        # Сабти маблағ дар таърихи доимӣ
+        try:
+            p_clean = "".join(c for c in str(price).replace(',', '.') if c.isdigit() or c == '.')
+            amount = float(p_clean) if p_clean else 0.0
+            cur.execute("INSERT INTO revenue_history (amount, day, customer_id) VALUES (?, ?, ?)", (amount, datetime.now().strftime("%Y-%m-%d"), customer_id))
+        except Exception:
+            pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "order_id": order_id, "created": created}), 201
+    except sqlite3.Error as e:
+        print(f"Database error in api_orders_new: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "Database error"}), 500
+    except Exception as e:
+        print(f"Unexpected error in api_orders_new: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/get-next-payment-phone")
 @require_api_key
@@ -5175,7 +5229,7 @@ def get_all_aktsii():
 
 @app.route('/')
 def home():
-    return render_template_string(HTML_TEMPLATE, orders=get_orders(), categories=get_all_foods(), text_reviews=get_all_reviews(), aktsii=get_all_aktsii())
+    return render_template_string(HTML_TEMPLATE, orders=get_orders(), categories=get_all_foods(), text_reviews=get_all_reviews(), aktsii=get_all_aktsii(), api_key=TFC_API_KEY)
 
 @app.route('/food/<int:food_id>')
 def food_detail(food_id):
