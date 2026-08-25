@@ -1450,7 +1450,7 @@ HTML = r"""<!DOCTYPE html>
                     </td>
                     <td class="font-mono text-sm text-gray-400">#${order.id} <span class="opacity-50">(${escapeHtml(order.mijoz_id || '—')})</span></td>
                     <td class="text-gray-300 whitespace-nowrap">
-                        ${order.khurok.split(', ').map(it => {
+                        ${String(order.khurok || '').split(', ').map(it => {
                             const isStruck = it.includes('<s>');
                             const clean = it.replace(/<\/?s>/g, '');
                             return `<span onclick="toggleFoodItem(${order.id}, \`${order.khurok.replace(/`/g, '\\`').replace(/"/g, '&quot;')}\`, \`${it.replace(/`/g, '\\`').replace(/"/g, '&quot;')}\`)" 
@@ -2141,23 +2141,48 @@ HTML = r"""<!DOCTYPE html>
         }
 
         async function fetchNewOrders(isInitial) {
-            // Танҳо як бор fetch мекунем бо истифодаи lastSeenOrderId
-            const res = await fetch(`${API_BASE_URL}/api/orders/since?last_id=${lastSeenOrderId}`, { cache: 'no-store', headers: apiHeaders() });
-            if (!res.ok) return;
-            const data = await res.json();
+            // Инкременталии /api/orders/since; агар сервер /api/orders-ро насупорад,
+            // ба /api/orders мегузарем (fallback барои endpoint-ҳои мухталиф).
+            let res;
+            try {
+                res = await fetch(`${API_BASE_URL}/api/orders/since?last_id=${lastSeenOrderId}`, { cache: 'no-store', headers: apiHeaders() });
+                if (res.status === 404) {
+                    res = await fetch(`${API_BASE_URL}/api/orders`, { cache: 'no-store', headers: apiHeaders() });
+                }
+            } catch (e) {
+                return;
+            }
+            if (!res || !res.ok) return;
+
+            let data;
+            try { data = await res.json(); } catch (e) { return; }
+            if (!data || !data.ok) return;
+
             const newOrders = Array.isArray(data.orders) ? data.orders : [];
             if (newOrders.length === 0) return;
 
-            // Филтр кардани танҳо заказҳои воқеан нав
-            const trulyNewOrders = newOrders.filter(o => !orders.some(existing => existing.id === o.id));
-            if (trulyNewOrders.length === 0) return;
+            // Агар ҳамаи id-ҳои сервер аз lastSeenOrderId хурд бошанд,
+            // маънои он аст, ки база пок/барқарор шудааст — аз 0 сар мекунем.
+            let maxServerId = 0;
+            newOrders.forEach(o => { const n = Number(o.id); if (!isNaN(n) && n > maxServerId) maxServerId = n; });
+            if (maxServerId < lastSeenOrderId) {
+                lastSeenOrderId = 0;
+                return; // дар даври навбатӣ ҳамаро аз нав мегирем
+            }
 
-            for (const o of trulyNewOrders) {
+            const trulyNewOrders = [];
+            for (const o of newOrders) {
+                const oid = Number(o.id);
+                if (isNaN(oid)) continue;
+                const isDuplicate = orders.some(existing => Number(existing.id) === oid);
+                if (isDuplicate) continue;
+
+                trulyNewOrders.push(o);
                 orders.unshift({
-                    id: o.id,
+                    id: oid,
                     nom: o.customer,
                     mijoz_id: o.customer_id || '',
-                    khurok: o.food,
+                    khurok: o.food || '',
                     pul: o.price,
                     phone: o.phone || '',
                     delivery_type: o.delivery_type || 'pickup',
@@ -2173,8 +2198,13 @@ HTML = r"""<!DOCTYPE html>
                     payment_method: o.payment_method || 'online',
                     tip: o.tip || ''
                 });
-                if (o.id > lastSeenOrderId) lastSeenOrderId = o.id;
             }
+
+            // Ҳатто агар заказҳои нав набошанд, курсорро ба болотарин id мебарем,
+            // то даврҳои навбатӣ инкременталӣ бошанд ва тамоми заказҳоро дубора накашанд.
+            if (maxServerId > lastSeenOrderId) lastSeenOrderId = maxServerId;
+
+            if (trulyNewOrders.length === 0) return;
 
             renderTable();
 

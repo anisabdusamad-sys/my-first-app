@@ -5161,9 +5161,26 @@ def api_orders_since():
     try:
         last_id = int(request.args.get("last_id", 0))
         conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
-        cur.execute("SELECT id, customer, customer_id, food, price, qabyl, omoda, created, phone, delivery_type, delivery_latitude, delivery_longitude, delivery_address, estimated_time, tip FROM orders WHERE id > ?", (last_id,))
+        cur.execute("""SELECT id, customer, customer_id, food, price, qabyl, omoda, dostavka,
+                              out_of_stock, refund, created, phone, delivery_type,
+                              delivery_latitude, delivery_longitude, delivery_address,
+                              estimated_time, tip, payment_method
+                       FROM orders WHERE id > ?""", (last_id,))
         rows = cur.fetchall(); conn.close()
-        return jsonify({"ok": True, "orders": [{"id": r[0], "customer": r[1], "customer_id": r[2], "food": r[3], "price": r[4], "qabyl": bool(r[5]), "omoda": bool(r[6]), "created": r[7], "phone": r[8], "delivery_type": r[9], "delivery_latitude": r[10] if len(r) > 10 else "", "delivery_longitude": r[11] if len(r) > 11 else "", "delivery_address": r[12] if len(r) > 12 else "", "estimated_time": r[13], "tip": r[14] if len(r) > 14 else ""} for r in rows]})
+        return jsonify({"ok": True, "orders": [{
+            "id": r[0], "customer": r[1], "customer_id": r[2], "food": r[3], "price": r[4],
+            "qabyl": bool(r[5]), "omoda": bool(r[6]),
+            "dostavka": int(r[7]) if r[7] is not None else 0,
+            "out_of_stock": bool(r[8]) if r[8] is not None else False,
+            "refund": r[9] if r[9] is not None else 0,
+            "created": r[10], "phone": r[11], "delivery_type": r[12],
+            "delivery_latitude": r[13] if len(r) > 13 else "",
+            "delivery_longitude": r[14] if len(r) > 14 else "",
+            "delivery_address": r[15] if len(r) > 15 else "",
+            "estimated_time": r[16] if r[16] is not None else 0,
+            "tip": r[17] if len(r) > 17 else "",
+            "payment_method": r[18] if len(r) > 18 else "online"
+        } for r in rows]})
     except ValueError:
         return jsonify({"ok": False, "error": "Invalid last_id parameter"}), 400
     except sqlite3.Error as e:
