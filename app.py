@@ -653,7 +653,7 @@ HTML_TEMPLATE = r"""
             --tfc-white: #ffffff;
         }
 
-        body, html { margin:0; padding:0; overflow-x:hidden; font-family:'Montserrat',sans-serif; background:#000; height: 100%; }
+        body, html { margin:0; padding:0; overflow-x:hidden; font-family:'Montserrat',sans-serif; background:#000; height: 100%; touch-action: pan-y; }
         
         .auth-gradient-bg {
             background: radial-gradient(circle at center, #ff0000 0%, #990000 45%, #220000 85%, #000 100%) !important;
@@ -3140,6 +3140,113 @@ HTML_TEMPLATE = r"""
             }, { passive: true });
         }
 
+        // ===== ГЛОБАЛИИ EDGE-SWIPE BACK (жест «назад» от левого края) =====
+        // Свайп аз канори чапи экран ба рост → бозгашт ба модал/экран/саҳифаи қаблӣ.
+        let lastEdgeSwipeAt = 0;
+
+        function getOpenSecondarySectionId() {
+            const sections = ['menu-section', 'pizza-section', 'fastfood-section', 'summer-menu-section',
+                              'combo-section', 'otziv-section', 'aktsii-section', 'adres-section',
+                              'vakansii-section', 'notifications-section', 'profile-section',
+                              'profile-settings-section'];
+            for (const id of sections) {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none' && el.style.display !== '') return id;
+            }
+            return null;
+        }
+
+        function isOverlayActive(id) {
+            const el = document.getElementById(id);
+            return !!(el && el.classList.contains('active'));
+        }
+
+        function handleGlobalEdgeSwipeBack() {
+            const now = Date.now();
+            if (now - lastEdgeSwipeAt < 400) return;
+            lastEdgeSwipeAt = now;
+
+            // 1) Модалҳо/оверлейҳо
+            if (typeof closeOrderModal === 'function' && isOverlayActive('order-modal-overlay')) { closeOrderModal(); return; }
+            if (typeof closeCartModal === 'function' && isOverlayActive('cart-modal-overlay')) { closeCartModal(); return; }
+            if (typeof closeFoodInfoOverlay === 'function' && isOverlayActive('food-info-overlay')) { closeFoodInfoOverlay(); return; }
+            if (typeof closePhoneOrderModal === 'function' && isOverlayActive('phone-order-modal-overlay')) { closePhoneOrderModal(); return; }
+            if (typeof closeNotifClearModal === 'function' && isOverlayActive('notif-clear-modal-overlay')) { closeNotifClearModal(); return; }
+
+            // 2) Танзимоти профил
+            const settingsSection = document.getElementById('profile-settings-section');
+            if (settingsSection && settingsSection.style.display !== 'none' && typeof hideProfileSettings === 'function') {
+                hideProfileSettings();
+                return;
+            }
+
+            // 3) Саҳифаҳои дохилӣ — бозгашт ба хона
+            const openSection = getOpenSecondarySectionId();
+            if (openSection) {
+                const hideFnMap = {
+                    'menu-section': 'hideMenu', 'pizza-section': 'hidePizza',
+                    'fastfood-section': 'hideFastFood', 'summer-menu-section': 'hideSummerMenu',
+                    'combo-section': 'hideCombo', 'otziv-section': 'hideOtziv',
+                    'aktsii-section': 'hideAktsii', 'adres-section': 'hideAdres',
+                    'vakansii-section': 'hideVakansii', 'notifications-section': 'hideNotifications',
+                    'profile-section': 'hideProfileScreen'
+                };
+                const hideFn = hideFnMap[openSection];
+                if (hideFn && typeof window[hideFn] === 'function') {
+                    window[hideFn]();
+                    return;
+                }
+            }
+
+            // 4) Хона: агар таърихи дохилӣ бошад, бозгашт
+            try {
+                if (window.location.hash || history.state) { history.back(); return; }
+            } catch (e) {}
+        }
+
+        function attachGlobalEdgeSwipeBack() {
+            if (window.__edgeSwipeAttached) return;
+            window.__edgeSwipeAttached = true;
+
+            const coords = { x: null, y: null, t: 0 };
+            document.addEventListener('touchstart', (event) => {
+                const touch = event.touches[0];
+                if (!touch) return;
+                coords.x = touch.clientX;
+                coords.y = touch.clientY;
+                coords.t = Date.now();
+            }, { passive: true });
+
+            document.addEventListener('touchend', (event) => {
+                const touch = event.changedTouches[0];
+                if (!touch || coords.x === null) return;
+
+                const startX = coords.x;
+                const startY = coords.y;
+                const endX = touch.clientX;
+                const endY = touch.clientY;
+                const dx = endX - startX;
+                const dy = endY - startY;
+                const isEdgeStart = startX < 30;
+                const isRightSwipe = dx > 50;
+                const isHorizontal = Math.abs(dx) > Math.abs(dy) * 1.4;
+                const isQuick = (Date.now() - coords.t) < 800;
+
+                if (isEdgeStart && isRightSwipe && isHorizontal && isQuick) {
+                    handleGlobalEdgeSwipeBack();
+                }
+                coords.x = null;
+                coords.y = null;
+            }, { passive: true });
+        }
+
+        // Пас аз он ки скриптҳо пурра бор шуданд, свайпи сатҳи глобалиро пайваст мекунем
+        if (document.readyState !== 'loading') {
+            attachGlobalEdgeSwipeBack();
+        } else {
+            document.addEventListener('DOMContentLoaded', attachGlobalEdgeSwipeBack);
+        }
+
         function saveProfileData() {
             const firstName = document.getElementById('profile-first-name')?.value.trim() || '';
             const lastName = document.getElementById('profile-last-name')?.value.trim() || '';
@@ -3923,6 +4030,15 @@ HTML_TEMPLATE = r"""
 
         function closeNotifClearModal() {
             document.getElementById('notif-clear-modal-overlay').classList.remove('active');
+        }
+
+        function closePhoneOrderModal() {
+            if (bottomPageInHistory) {
+                history.back();
+                return;
+            }
+            const overlay = document.getElementById('phone-order-modal-overlay');
+            if (overlay) overlay.classList.remove('active', 'full-page-view');
         }
 
         function executeClearNotifications() {
@@ -4763,7 +4879,8 @@ HTML_TEMPLATE = r"""
         document.getElementById("notif-clear-modal-overlay").addEventListener("click", function (e) {
             if (e.target.id === "notif-clear-modal-overlay") closeNotifClearModal();
         });
-        document.getElementById("phone-order-modal-overlay").addEventListener("click", function (e) {
+        const phoneOrderOverlayEl = document.getElementById("phone-order-modal-overlay");
+        if (phoneOrderOverlayEl) phoneOrderOverlayEl.addEventListener("click", function (e) {
             if (e.target.id === "phone-order-modal-overlay") closePhoneOrderModal();
         });
 
