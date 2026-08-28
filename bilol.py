@@ -1595,6 +1595,8 @@ HTML = r"""<!DOCTYPE html>
             let newFullText = newItems.join(', ');
             let newRefund = (order.refund || 0) + (isStriking ? refundDiff : -refundDiff);
             if (newRefund < 0) newRefund = 0;
+            // Флаг «есть зачёркнутые позиции» — снимается, когда все позиции восстановлены
+            let anyStruck = newItems.some(it => it.includes('<s>'));
 
             await fetch(`${API_BASE_URL}/api/orders/update-status`, {
                 method: 'POST',
@@ -1609,12 +1611,12 @@ HTML = r"""<!DOCTYPE html>
             await fetch(`${API_BASE_URL}/api/orders/update-status`, {
                 method: 'POST',
                 headers: apiHeaders(),
-                body: JSON.stringify({ id: orderId, field: 'out_of_stock', value: 1 })
+                body: JSON.stringify({ id: orderId, field: 'out_of_stock', value: anyStruck ? 1 : 0 })
             });
             
             if (order) { 
                 order.khurok = newFullText; 
-                order.out_of_stock = true; 
+                order.out_of_stock = anyStruck; 
                 order.refund = newRefund;
                 saveOrders();
             }

@@ -4806,17 +4806,32 @@ HTML_TEMPLATE = r"""
                 }
                 list.innerHTML = orders.slice().reverse().map(o => {
                     const meta = orderStatusMeta(o);
-                    const food = String(o.food || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || 'Заказ';
+                    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                    // Показываем позиции с зачёркиванием недостающих (<s>...</s>)
+                    const foodHtml = String(o.food || '').split(/,\s*/).filter(Boolean).map(it => {
+                        const struck = it.includes('<s>');
+                        const clean = esc(it.replace(/<\/?s>/g, '')).replace(/\s+/g, ' ').trim();
+                        if (!clean) return '';
+                        return struck ? `<s style="opacity:0.55;text-decoration-color:#f87171;text-decoration-thickness:2px;">${clean}</s>` : clean;
+                    }).filter(Boolean).join(', ') || 'Заказ';
                     const time = String(o.created || '').trim();
-                    const oosNote = o.out_of_stock && !(parseFloat(o.refund || 0) >= (parseFloat(String(o.price || 0).replace(',', '.').replace(/[^0-9.]/g, '')) || 0))
+                    const numP = v => parseFloat(String(v || 0).replace(',', '.').replace(/[^0-9.]/g, '')) || 0;
+                    const origPrice = numP(o.price);
+                    const refundV = numP(o.refund);
+                    const isPartial = !!(o.out_of_stock && o.has_cancelled_items !== false && refundV > 0 && refundV < origPrice);
+                    // Итоговая сумма с учётом возврата за недостающие блюда
+                    const priceLine = isPartial
+                        ? `Итого: <b>${+(origPrice - refundV).toFixed(2)}</b> смн · <s style="opacity:0.55;">${String(o.price || '')} смн</s> · <span class="text-red-400 font-bold">возврат ${o.refund} смн</span>`
+                        : `${String(o.price || '')} смн`;
+                    const oosNote = (o.out_of_stock && !(refundV >= origPrice && origPrice > 0))
                         ? '<div class="text-[11px] text-red-400 font-bold mt-1">Некоторые блюда не в наличии ❌</div>' : '';
                     return `
                         <div class="notif-item p-4 rounded-xl">
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="text-[10px] opacity-40 uppercase mb-1">#${o.id}${time ? ' · ' + time : ''}</div>
-                                    <div class="text-sm font-bold break-words">${food}</div>
-                                    <div class="text-xs opacity-60 mt-1">${String(o.price || '')} смн · ${o.delivery_type === 'delivery' ? 'Доставка' : 'Самовывоз'}</div>
+                                    <div class="text-sm font-bold break-words">${foodHtml}</div>
+                                    <div class="text-xs opacity-60 mt-1">${priceLine} · ${o.delivery_type === 'delivery' ? 'Доставка' : 'Самовывоз'}</div>
                                     ${oosNote}
                                 </div>
                                 <span class="shrink-0 text-[10px] font-black px-2 py-1 rounded-lg text-right" style="color:${meta.color}; border:1px solid ${meta.color}55;">${meta.label}</span>
@@ -4902,11 +4917,16 @@ HTML_TEMPLATE = r"""
                             `<br><b>Ваш заказ будет готов и прислан через ${last.estimated_time} минут.</b>` : 
                             `<br><b>Ваш заказ будет готов примерно через ${last.estimated_time} минут.</b>`;
                     }
-                    statusText = `Заказ <b>принят</b> поваром! 👨‍🍳${timeMsg}`;
+                    if (last.has_cancelled_items || (last.out_of_stock && oosPart)) {
+                        // Частичная отмена: заказ принят, но некоторые позиции зачёркнуты (Случай 2)
+                        statusText = "Ваш заказ принят поваром! К сожалению, некоторых позиций не оказалось в наличии. Сумма за недостающие блюда будет возвращена.";
+                    } else {
+                        statusText = `Заказ <b>принят</b> поваром! 👨‍🍳${timeMsg}`;
+                    }
                     statusType = "accepted";
                 }
 
-                if (statusType === "pending" || statusType === "accepted") {
+                if (statusType === "pending") {
                     statusText += oosPart;
                 }
 
@@ -5407,17 +5427,38 @@ def api_orders_since():
 def api_orders_update_status():
     data = request.get_json() or {}
     order_id, field = data.get("id"), data.get("field")
-    db_value = int(data.get("value", 0))
+    # Допустимые поля (защита от SQL-инъекций в UPDATE) 
+    allowed_fields = {"qabyl", "omoda", "dostavka", "out_of_stock", "refund",
+                      "food", "estimated_time", "payment_method", "delivery_address"}
+    if field not in allowed_fields or order_id is None:
+        return jsonify({"ok": False, "error": "Invalid field or id"}), 400
+    raw_value = data.get("value", 0)
+    # Преобразование значения по типу поля: food — строка (с тегами <s>), refund — float, остальные — int
+    try:
+        if field in ("food", "payment_method", "delivery_address"):
+            db_value = str(raw_value)
+        elif field == "refund":
+            db_value = float(str(raw_value).replace(",", ".").replace(" ", "") or 0)
+        elif field == "estimated_time":
+            db_value = int(float(raw_value or 0))
+        else:
+            db_value = int(raw_value)
+    except (TypeError, ValueError):
+        db_value = 1 if raw_value is True else 0
     estimated_time = data.get("estimated_time")
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
-    if field == 'qabyl' and estimated_time is not None:
-        cur.execute(f"UPDATE orders SET {field} = ?, estimated_time = ? WHERE id = ?", (db_value, estimated_time, order_id))
-    else:
-        cur.execute(f"UPDATE orders SET {field} = ? WHERE id = ?", (db_value, order_id))
-    conn.commit(); conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+        if field == 'qabyl' and estimated_time is not None:
+            cur.execute(f"UPDATE orders SET {field} = ?, estimated_time = ? WHERE id = ?", (db_value, estimated_time, order_id))
+        else:
+            cur.execute(f"UPDATE orders SET {field} = ? WHERE id = ?", (db_value, order_id))
+        conn.commit(); conn.close()
+    except sqlite3.Error as e:
+        print(f"Database error in api_orders_update_status: {e}")
+        return jsonify({"ok": False, "error": "Database error"}), 500
 
     # Push Notification Logic
-    if db_value > 0:
+    if isinstance(db_value, (int, float)) and db_value > 0:
         # (Инҷо коди фиристодани Push-ро мисли bilol.py илова кардан мумкин аст)
         pass
     return jsonify({"ok": True})
@@ -5431,7 +5472,32 @@ def api_orders_customer_status():
         cur.execute("SELECT id, food, qabyl, omoda, phone, delivery_type, dostavka, out_of_stock, refund, estimated_time, price, created FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 50", (customer_id,))
         rows = cur.fetchall(); conn.close()
         # ASC по id: последний элемент массива — самый новый заказ (как ожидает pollCustomerStatus)
-        orders = [{"id": r[0], "food": r[1], "qabyl": bool(r[2]), "omoda": bool(r[3]), "phone": r[4], "delivery_type": r[5], "dostavka": int(r[6]), "out_of_stock": bool(r[7]), "refund": r[8] if r[8] is not None else 0, "estimated_time": r[9] if len(r) > 9 else 0, "price": r[10] if len(r) > 10 else "0", "created": r[11] if len(r) > 11 else ""} for r in rows]
+        def _num(v):
+            try:
+                return float(re.sub(r"[^0-9.]", "", str(v).replace(",", ".")) or 0)
+            except Exception:
+                return 0.0
+        orders = []
+        for r in rows:
+            food_str = r[1] or ""
+            refund_v = float(r[8]) if r[8] is not None else 0.0
+            price_v = _num(r[10])
+            oos_b = bool(r[7])
+            struck_items = re.findall(r"<s>(.*?)</s>", food_str)
+            # Частичная отмена: есть зачёркнутые позиции, но заказ НЕ отменён полностью (refund < price)
+            has_cancelled = oos_b and bool(struck_items) and 0 < refund_v < price_v
+            orders.append({
+                "id": r[0], "food": food_str, "qabyl": bool(r[2]), "omoda": bool(r[3]),
+                "phone": r[4], "delivery_type": r[5], "dostavka": int(r[6]),
+                "out_of_stock": oos_b,
+                "refund": refund_v,
+                "estimated_time": r[9] if len(r) > 9 else 0,
+                "price": r[10] if len(r) > 10 else "0",
+                "created": r[11] if len(r) > 11 else "",
+                "has_cancelled_items": has_cancelled,
+                "struck_items": struck_items,
+                "final_price": max(0.0, price_v - refund_v) if has_cancelled else price_v,
+            })
         orders.reverse()
         return jsonify({"ok": True, "orders": orders})
     except Exception as e:
