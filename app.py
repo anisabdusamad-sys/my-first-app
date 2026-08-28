@@ -4919,7 +4919,34 @@ HTML_TEMPLATE = r"""
                     }
                     if (last.has_cancelled_items || (last.out_of_stock && oosPart)) {
                         // Частичная отмена: заказ принят, но некоторые позиции зачёркнуты (Случай 2)
-                        statusText = "Ваш заказ принят поваром! К сожалению, некоторых позиций не оказалось в наличии. Сумма за недостающие блюда будет возвращена.";
+                        // Собираем список недостающих позиций: из struck_items или парсим <s> из food
+                        let itemsText = "";
+                        const stripTags = s => String(s).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+                        if (Array.isArray(last.struck_items) && last.struck_items.length > 0) {
+                            itemsText = last.struck_items.map(stripTags).filter(Boolean).join(", ");
+                        } else if (last.food) {
+                            const regex = /<s>(.*?)<\/s>/g;
+                            let m;
+                            const list = [];
+                            while ((m = regex.exec(last.food)) !== null) list.push(m[1]);
+                            itemsText = list.map(stripTags).filter(Boolean).join(", ");
+                        }
+                        // Сумма возврата: refund или price - final_price, формат до 2 знаков без лишних нулей
+                        let refundAmount = parseFloat(String(last.refund).replace(",", "."));
+                        if (isNaN(refundAmount) || refundAmount <= 0) {
+                            const priceNum = parseFloat(String(last.price || 0).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
+                            const finalNum = parseFloat(String(last.final_price).replace(",", ".")) || 0;
+                            refundAmount = priceNum - finalNum;
+                        }
+                        if (refundAmount < 0) refundAmount = 0;
+                        refundAmount = Math.round(refundAmount * 100) / 100;
+                        const refundTxt = (refundAmount % 1 === 0) ? String(refundAmount) : refundAmount.toFixed(2);
+                        if (itemsText) {
+                            const word = itemsText.indexOf(",") !== -1 ? "позиций" : "позиции";
+                            statusText = `Ваш заказ принят поваром! К сожалению, ${word} (${itemsText}) нет в наличии. Вам будет возвращено ${refundTxt} смн.`;
+                        } else {
+                            statusText = "Ваш заказ принят поваром! К сожалению, некоторых позиций не оказалось в наличии. Сумма за недостающие блюда будет возвращена.";
+                        }
                     } else {
                         statusText = `Заказ <b>принят</b> поваром! 👨‍🍳${timeMsg}`;
                     }
