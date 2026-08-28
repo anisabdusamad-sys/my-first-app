@@ -1329,6 +1329,13 @@ HTML = r"""<!DOCTYPE html>
             return {'Content-Type': 'application/json', 'X-API-KEY': API_KEY};
         }
 
+        // Барои FormData (multipart/form-data) Content-Type нагузоред — браузер
+        // худ мустақилона boundary-ро илова мекунад. Агар 'application/json' гузорем,
+        // 'request.form'-и Flask холӣ мемонад ва сервер 400 (missing_fields) медиҳад.
+        function apiMultipartHeaders() {
+            return {'X-API-KEY': API_KEY};
+        }
+
         function showConfirm(msg, action) {
             document.getElementById('confirm-msg').textContent = msg;
             confirmAction = action;
@@ -2539,7 +2546,7 @@ HTML = r"""<!DOCTYPE html>
                 formData.append('image', fileInput.files[0]);
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/aktsii/add`, { method: 'POST', headers: apiHeaders(), body: formData });
+            const res = await fetch(`${API_BASE_URL}/api/aktsii/add`, { method: 'POST', headers: apiMultipartHeaders(), body: formData });
             const data = await res.json();
             foodSubmitBtn.disabled = false;
             
@@ -2598,6 +2605,7 @@ HTML = r"""<!DOCTYPE html>
             document.getElementById('food-modal-name').placeholder = 'Например: Менеджер по продажам';
             document.getElementById('food-modal-price').placeholder = 'Например: 800-1200';
             document.getElementById('food-modal-description').placeholder = 'Подробная информация: требования, условия, контакты';
+            document.getElementById('food-modal-submit-btn').onclick = saveVakansii;
             document.getElementById('food-modal-submit-btn').textContent = isEdit ? 'Сохранить' : 'Создать';
             document.getElementById('food-modal-category-container').classList.add('hidden');
             document.getElementById('food-modal-desc-container').classList.remove('hidden');
@@ -2674,7 +2682,7 @@ HTML = r"""<!DOCTYPE html>
             try {
                 const response = await fetch(url, {
                     method: method,
-                    headers: apiHeaders(),
+                    headers: apiMultipartHeaders(),
                     body: formData
                 });
                 const data = await response.json();
@@ -2686,6 +2694,52 @@ HTML = r"""<!DOCTYPE html>
                     } else {
                         toast(id ? 'Блюдо обновлено' : 'Блюдо добавлено');
                     }
+                } else {
+                    const errMap = { 'duplicate_name': 'Это название уже существует', 'missing_fields': 'Заполните поля' };
+                    toast('Ошибка: ' + (errMap[data.error] || data.error || 'Неизвестная ошибка'), true);
+                }
+            } catch (e) {
+                console.error(e);
+                toast('Ошибка при создании', true);
+            }
+        }
+
+        async function saveVakansii() {
+            const id = document.getElementById('food-modal-id').value.trim();
+            const title = document.getElementById('food-modal-name').value.trim();
+            const salary = document.getElementById('food-modal-price').value.trim();
+            const description = document.getElementById('food-modal-description').value.trim();
+            const existing_image = document.getElementById('food-modal-image').value.trim();
+            const fileInput = document.getElementById('food-modal-file');
+
+            if (!title || !salary || !description) {
+                toast('Заполните все поля', true);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('salary', salary);
+            formData.append('description', description);
+            formData.append('image_url', existing_image);
+            if (fileInput.files[0]) {
+                formData.append('image', fileInput.files[0]);
+            }
+
+            const method = id ? 'PUT' : 'POST';
+            const url = id ? `${API_BASE_URL}/api/vacancies/update/${id}` : `${API_BASE_URL}/api/vacancies/add`;
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: apiMultipartHeaders(),
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.ok) {
+                    hideAddFoodModal();
+                    loadVakansii();
+                    toast(id ? 'Данные обновлены' : 'Вакансия добавлена');
                 } else {
                     const errMap = { 'duplicate_name': 'Это название уже существует', 'missing_fields': 'Заполните поля' };
                     toast('Ошибка: ' + (errMap[data.error] || data.error || 'Неизвестная ошибка'), true);

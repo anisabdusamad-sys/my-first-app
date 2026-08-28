@@ -5544,6 +5544,123 @@ def api_foods_delete(food_id):
     conn.close()
     return jsonify({"ok": deleted})
 
+# =====================================================================
+# ВАКАНСИЯҲО (Vacancies) — endpoint-ҳои алоҳида
+# Вакансияҳо дар ҳамин ҷадвали foods бо category='Вакансии' нигоҳ дошта
+# мешаванд (то сайти клиент онҳоро дар #vakansii-section нишон диҳад),
+# аммо панели админ ба /api/vacancies/* мефиристад.
+# =====================================================================
+def _form_or_json():
+    """Яке кардани маълумоти multipart/form-data ва JSON-ро барои роутҳо."""
+    data = {k: request.form.get(k) for k in request.form}
+    if request.is_json:
+        j = request.get_json(silent=True)
+        if isinstance(j, dict):
+            for k, v in j.items():
+                data.setdefault(k, v)
+    return data
+
+@app.route("/api/vacancies/list", methods=["GET"])
+@require_api_key
+def api_vacancies_list():
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("SELECT id, name, price, image_url, description, created, subcategory FROM foods WHERE category = 'Вакансии' ORDER BY id DESC")
+    rows = cur.fetchall(); conn.close()
+    return jsonify({"ok": True, "vacancies": [
+        {"id": r[0], "title": r[1], "salary": r[2], "image_url": r[3], "description": r[4],
+         "created": r[5], "subcategory": r[6] if len(r) > 6 else ""}
+        for r in rows
+    ]})
+
+@app.route("/api/vacancies/add", methods=["POST", "OPTIONS"])
+@require_api_key
+def api_vacancies_add():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    # Пазируфтани ҳам title/salary ва ҳам name/price (алиасҳо)
+    _d = _form_or_json()
+    title = (_d.get("title") or _d.get("name") or "").strip()
+    salary = (_d.get("salary") or _d.get("price") or "").strip()
+    description = (_d.get("description") or "").strip()
+    image_url = (_d.get("image_url") or "").strip()
+
+    if not title or not salary:
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename != '':
+            image_url = save_uploaded_media(file)
+
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO foods (name, price, category, subcategory, image_url, description, created) VALUES (?, ?, 'Вакансии', '', ?, ?, ?)",
+            (title, salary, image_url, description, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        vacancy_id = cur.lastrowid
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "food": {
+            "id": vacancy_id, "name": title, "price": salary,
+            "category": "Вакансии", "image_url": image_url
+        }}), 201
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"ok": False, "error": "duplicate_name"}), 400
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/vacancies/update/<int:vacancy_id>", methods=["PUT", "OPTIONS"])
+@require_api_key
+def api_vacancies_update(vacancy_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    _d = _form_or_json()
+    title = (_d.get("title") or _d.get("name") or "").strip()
+    salary = (_d.get("salary") or _d.get("price") or "").strip()
+    description = (_d.get("description") or "").strip()
+    image_url = (_d.get("image_url") or "").strip()
+
+    if not title or not salary:
+        return jsonify({"ok": False, "error": "missing_fields"}), 400
+
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename != '':
+            image_url = save_uploaded_media(file)
+
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE foods SET name = ?, price = ?, image_url = ?, description = ? WHERE id = ? AND category = 'Вакансии'",
+            (title, salary, image_url, description, vacancy_id),
+        )
+        conn.commit()
+        updated = cur.rowcount > 0
+        conn.close()
+        return jsonify({"ok": updated})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"ok": False, "error": "duplicate_name"}), 400
+    except Exception as e:
+        if 'conn' in locals(): conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/vacancies/delete/<int:vacancy_id>", methods=["DELETE", "OPTIONS"])
+@require_api_key
+def api_vacancies_delete(vacancy_id):
+    if request.method == "OPTIONS":
+        return ("", 204)
+    conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
+    cur.execute("DELETE FROM foods WHERE id = ? AND category = 'Вакансии'", (vacancy_id,))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True})
+
 @app.route("/api/aktsii/list", methods=["GET"])
 @require_api_key
 def api_aktsii_list():
