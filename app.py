@@ -5114,6 +5114,7 @@ def api_get_next_phone():
 @require_api_key
 def api_orders_list():
     """Get all orders with full details for admin panel"""
+    print(f"[TFC] GET /api/orders from host={request.host} origin={request.headers.get('Origin')} key_present={bool(request.headers.get('X-API-KEY'))}")
     try:
         conn = sqlite3.connect(DB_PATH, timeout=20)
         cur = conn.cursor()
@@ -5160,6 +5161,7 @@ def api_orders_list():
 def api_orders_since():
     try:
         last_id = int(request.args.get("last_id", 0))
+        print(f"[TFC] GET /api/orders/since last_id={last_id} from host={request.host} origin={request.headers.get('Origin')} key_present={bool(request.headers.get('X-API-KEY'))}")
         conn = sqlite3.connect(DB_PATH, timeout=20); cur = conn.cursor()
         cur.execute("""SELECT id, customer, customer_id, food, price, qabyl, omoda, dostavka,
                               out_of_stock, refund, created, phone, delivery_type,

@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, jsonify, send_from_directory
+from flask import Flask, render_template_string, request, jsonify, send_from_directory, Response
 import sqlite3
 import json
 import os
@@ -65,41 +65,51 @@ UPLOAD_FOLDER = 'static/images'
 IMAGE_MAX_SIZE = (1200, 1200)
 IMAGE_WEBP_QUALITY = 78
 
+# =====================================================================
 # API Base URL for inter-app communication
-# Эҳтимолии рендер: TFC_API_URL (агар гузошта шуд) → вагарна дар Render → URL-и app.py → вагарна localhost.
-DEFAULT_API_URL = os.getenv("TFC_API_URL")
-if not DEFAULT_API_URL:
-    if os.environ.get("RENDER_EXTERNAL_URL"):
-        # Дар Render (admin-panel) бояд ба app.py-ии публикӣ пайваст шавад.
-        DEFAULT_API_URL = "https://my-first-app-1-4t5v.onrender.com"
-    else:
-        DEFAULT_API_URL = f"http://{get_local_ip()}:5000"
+# app.py (https://my-first-app-1-4t5v.onrender.com) — ИН сарвари асосист:
+#   - заказҳоро аз клиент қабул мекунад ва дар БАЗАИ ХУДИ app.py нигоҳ медорад
+#   - GET /api/orders ва /api/orders/since-ро хизмат мекунад
+# Панели админ (bilol.py / my-first-app-2) МУҲИМ: бояд ТАНҲО аз app.py маълумот
+# гирад, зеро дар Render ҳар сервис диски алоҳида (SQLite) дорад ва заказҳо
+# танҳо дар базаи app.py ҳастанд.
+# =====================================================================
+KNOWN_APP_HOST = "https://my-first-app-1-4t5v.onrender.com"
+
+# On Render (RENDER_EXTERNAL_HOSTNAME ҳамеша мавҷуд аст) — ҳатман ба app.py.
+# TFC_API_URL-и кӯҳна/хато (масалан tfc-project-2sss...) набояд инро вайрон кунад.
+if os.environ.get("RENDER_EXTERNAL_HOSTNAME") or os.environ.get("RENDER_EXTERNAL_URL"):
+    DEFAULT_API_URL = KNOWN_APP_HOST
+    env_api = os.getenv("TFC_API_URL")
+    if env_api and env_api.rstrip("/") != KNOWN_APP_HOST:
+        print(f"⚠️ TFC_API_URL={env_api} нодида гирифта шуд; дар Render app.py = {KNOWN_APP_HOST}")
+    print(f"🌐 Render -> API_BASE_URL (app.py) = {DEFAULT_API_URL}")
+else:
+    # Local dev: танҳо TFC_API_URL-и аёнро истифода мебарем, вагарна LAN IP.
+    DEFAULT_API_URL = os.getenv("TFC_API_URL") or f"http://{get_local_ip()}:5000"
 DEFAULT_API_URL = DEFAULT_API_URL.rstrip("/")
 API_BASE_URL = DEFAULT_API_URL
 
 def detect_app_host():
-    """Dynamically detect the app.py host URL"""
+    """Try to confirm the app.py host; on Render API_BASE_URL is already forced to KNOWN_APP_HOST."""
     global API_BASE_URL
     try:
-        # Try to get host info from app.py
         response = requests.get(f"{DEFAULT_API_URL}/api/host-info", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            if data.get("ok"):
-                # ИСТОПУДЬ: истифодаи "host" (бе /api), зеро JS худаш /api/... зам зам мезанад.
-                # Агар "api_url"-ро истифода кунем, URLи /api/api-и дугона мешавад ва пайваст намешавад.
-                API_BASE_URL = data["host"]
+            if data.get("ok") and str(data.get("host", "")).startswith("http"):
+                API_BASE_URL = data["host"].rstrip("/")
                 print(f"✅ Auto-detected app host: {API_BASE_URL}")
                 return
     except Exception as e:
         print(f"⚠️ Could not auto-detect app host: {e}")
-    
-    # Fallback to environment variable or default
+
     API_BASE_URL = DEFAULT_API_URL
     print(f"ℹ️ Using configured API URL: {API_BASE_URL}")
 
-# Auto-detect on module load
+# Auto-detect on module load (беҳтарин кӯшиш; дар Render ҳамин тавр app.py-ро тасдиқ мекунад)
 detect_app_host()
+print(f"🎯 FINAL API_BASE_URL = {API_BASE_URL} (истифодаи панели админ барои /api/orders...)")
 
 # Калидҳо бояд бо app.py якхела бошанд
 VAPID_PUBLIC_KEY = "BCX7B8_p9v7Z-S-l1M0W4Y1Z2X3C4V5B6N7M8L9K0J1I2H3G4F5E6D7C8B9A0S1D2F3G4H5J6K7L8"
@@ -1299,8 +1309,10 @@ HTML = r"""<!DOCTYPE html>
 
     <script>
         const STORAGE_KEY = 'tfc_admin_orders_v2';
-        const API_KEY = 'tfc_secret_key_2026_xyz_secure';
+        // API_KEY аз сервер меояд ({{ api_key }}) — ҳамеша бо TFC_API_KEY-и сервер мувофиқ аст.
+        const API_KEY = '{{ api_key }}';
         const API_BASE_URL = '{{ API_BASE_URL }}';
+        console.log('[TFC-Admin] API_BASE_URL =', API_BASE_URL, '| API_KEY set =', !!API_KEY, '| key =', API_KEY);
         let orders = [];
         let filterMode = 'all';
         let revenueChart = null;
@@ -2143,23 +2155,32 @@ HTML = r"""<!DOCTYPE html>
         async function fetchNewOrders(isInitial) {
             // Инкременталии /api/orders/since; агар сервер /api/orders-ро насупорад,
             // ба /api/orders мегузарем (fallback барои endpoint-ҳои мухталиф).
+            const sinceUrl = `${API_BASE_URL}/api/orders/since?last_id=${lastSeenOrderId}`;
+            console.log('[TFC-Admin] polling', sinceUrl, '| lastSeenOrderId =', lastSeenOrderId);
             let res;
             try {
-                res = await fetch(`${API_BASE_URL}/api/orders/since?last_id=${lastSeenOrderId}`, { cache: 'no-store', headers: apiHeaders() });
+                res = await fetch(sinceUrl, { cache: 'no-store', headers: apiHeaders() });
                 if (res.status === 404) {
+                    console.warn('[TFC-Admin] /api/orders/since -> 404, falling back to /api/orders');
                     res = await fetch(`${API_BASE_URL}/api/orders`, { cache: 'no-store', headers: apiHeaders() });
                 }
             } catch (e) {
+                console.error('[TFC-Admin] fetch error (CORS/network):', e);
                 return;
+            }
+            console.log('[TFC-Admin] response status =', res.status, '| URL =', res.url);
+            if (res.status === 401) {
+                console.error('[TFC-Admin] 401 — API_KEY incorrect or rejected by app.py');
             }
             if (!res || !res.ok) return;
 
             let data;
-            try { data = await res.json(); } catch (e) { return; }
-            if (!data || !data.ok) return;
+            try { data = await res.json(); } catch (e) { console.error('[TFC-Admin] JSON parse failed:', e); return; }
+            if (!data || !data.ok) { console.error('[TFC-Admin] response not ok:', data); return; }
 
             const newOrders = Array.isArray(data.orders) ? data.orders : [];
             if (newOrders.length === 0) return;
+            console.log('[TFC-Admin] got', newOrders.length, 'order(s) from server');
 
             // Агар ҳамаи id-ҳои сервер аз lastSeenOrderId хурд бошанд,
             // маънои он аст, ки база пок/барқарор шудааст — аз 0 сар мекунем.
@@ -2706,7 +2727,7 @@ HTML = r"""<!DOCTYPE html>
 def admin_panel():
     # ИСТОПУГ: API_BASE_URL-ро ба шаблон гузарони лозим аст, вагарна {{ API_BASE_URL }} холӣ мемонад
     # ва JS-и админ ба URL-и дуруст пайваст карда намешавад.
-    return render_template_string(HTML, API_BASE_URL=API_BASE_URL)
+    return render_template_string(HTML, API_BASE_URL=API_BASE_URL, api_key=API_KEY)
 
 @app.route('/admin_manifest.json')
 def serve_admin_manifest():
@@ -2850,53 +2871,36 @@ def api_orders_new():
     )
 
 
+def _proxy_get_from_app(path):
+    """Пешбарӣ (proxy) дархости GET ба app.py — сарвари асосии заказҳо.
+
+    Дар Render app.py ва bilol.py ду сервиси алоҳида бо базаҳои (SQLite) алоҳидаанд.
+    Заказҳо танҳо дар базаи app.py нигоҳ дошта мешаванд, бинобар панели админ
+    НАБОЯД аз базаи худаш (bilol.py) бихонад. Ин роут ҳамаи дархостҳоро ба
+    API_BASE_URL (app.py) мефиристад ва ҷавоби онро бармегардонад.
+    """
+    try:
+        resp = requests.get(
+            f"{API_BASE_URL}{path}",
+            headers={"X-API-KEY": API_KEY, "Content-Type": "application/json"},
+            timeout=15,
+        )
+        return Response(resp.content, status=resp.status_code, mimetype="application/json")
+    except Exception as e:
+        print(f"[TFC-Admin] Proxy error GET {path}: {e}")
+        return jsonify({"ok": False, "error": f"app.py unreachable: {e}"}), 502
+
 @app.route("/api/orders/since", methods=["GET"])
 @require_api_key
 def api_orders_since():
-    last_id = request.args.get("last_id", "0")
-    try:
-        last_id_int = int(last_id)
-    except ValueError:
-        last_id_int = 0
+    # Ҳамеша аз app.py (базаи ягонаи заказҳо) хонда мешавад.
+    return _proxy_get_from_app(f"/api/orders/since?last_id={request.args.get('last_id', '0')}")
 
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT id, customer, customer_id, food, price, qabyl, omoda, created, phone, delivery_type, dostavka, out_of_stock, refund, delivery_latitude, delivery_longitude, delivery_address, estimated_time, payment_method, tip FROM orders WHERE id > ? ORDER BY id ASC",
-        (last_id_int,),
-    )
-    rows = cur.fetchall()
-    conn.close()
-
-    return jsonify(
-        {
-            "ok": True,
-            "orders": [
-                {
-                    "id": r[0],
-                    "customer": r[1],
-                    "customer_id": r[2],
-                    "food": r[3],
-                    "price": r[4],
-                    "qabyl": bool(r[5]),
-                    "omoda": bool(r[6]),
-                    "created": r[7],
-                    "phone": r[8] if len(r) > 8 else "",
-                    "delivery_type": r[9] if len(r) > 9 else "pickup",
-                    "dostavka": int(r[10]) if len(r) > 10 else 0,
-                    "out_of_stock": bool(r[11]) if len(r) > 11 else False,
-                    "refund": r[12] if len(r) > 12 else 0,
-                    "delivery_latitude": r[13] if len(r) > 13 else "",
-                    "delivery_longitude": r[14] if len(r) > 14 else "",
-                    "delivery_address": r[15] if len(r) > 15 else "",
-                    "estimated_time": r[16] if len(r) > 16 else 0,
-                    "payment_method": r[17] if len(r) > 17 else "online",
-                    "tip": r[18] if len(r) > 18 else "",
-                }
-                for r in rows
-            ],
-        }
-    )
+@app.route("/api/orders", methods=["GET"])
+@require_api_key
+def api_orders_proxy():
+    # Ҳамаи заказҳо аз app.py.
+    return _proxy_get_from_app("/api/orders")
 
 @app.route("/api/orders/update-status", methods=["POST", "OPTIONS"])
 @require_api_key
