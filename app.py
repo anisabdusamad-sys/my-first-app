@@ -1864,6 +1864,13 @@ HTML_TEMPLATE = r"""
                 </div>
             </div>
 
+            <div class="mt-8">
+                <h3 class="text-lg font-black tracking-widest text-center mb-4" style="color: var(--tfc-gold);">МОИ ЗАКАЗЫ</h3>
+                <div id="my-orders-list" class="space-y-3">
+                    <p class="text-center opacity-50 text-sm">Заказов пока нет.</p>
+                </div>
+            </div>
+
             <div class="mt-8 pb-20">
                 <button id="profile-settings-btn" onclick="showProfileSettings()" class="w-full py-3 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all">
                     <i class="fa-solid fa-gear mr-2"></i> Настройка
@@ -3061,6 +3068,7 @@ HTML_TEMPLATE = r"""
             setTopControlsVisible(true);
             const homeBottomNav = document.getElementById('home-bottom-nav');
             if (homeBottomNav) homeBottomNav.style.display = 'flex';
+            loadMyOrders();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -4072,6 +4080,7 @@ HTML_TEMPLATE = r"""
                 localStorage.removeItem("tfc_customer_profile");
                 localStorage.removeItem("tfc_notifications_history");
                 localStorage.removeItem("tfc_last_notified_status");
+                localStorage.removeItem("tfc_my_orders");
                 window.location.reload();
             }
         }
@@ -4229,6 +4238,22 @@ HTML_TEMPLATE = r"""
                         const msg = "Ваш заказ <b>отправлен</b>! ✅";
                         latestCustomerStatus = data.order_id + "_pending";
                         localStorage.setItem("tfc_last_notified_status", latestCustomerStatus);
+                        // Сабт кардани заказ дар таърихи маҳаллии «Мои заказы» + навсозии UI
+                        try {
+                            const myOrders = JSON.parse(localStorage.getItem("tfc_my_orders") || "[]");
+                            myOrders.unshift({
+                                id: data.order_id,
+                                food: orderData.food,
+                                price: orderData.price,
+                                delivery_type: orderData.delivery_type,
+                                payment_method: orderData.payment_method || "online",
+                                phone: orderData.phone,
+                                status: "pending",
+                                created: new Date().toLocaleString('ru-RU')
+                            });
+                            localStorage.setItem("tfc_my_orders", JSON.stringify(myOrders.slice(0, 50)));
+                        } catch (e) {}
+                        renderMyOrders();
                         showLiveStatus(msg, false);
 
                         closeOrderModal();
@@ -4749,6 +4774,74 @@ HTML_TEMPLATE = r"""
             }, 6000); 
         }
 
+        function orderStatusMeta(o) {
+            const price = parseFloat(String(o.price || 0).replace(',', '.').replace(/[^0-9.]/g, '')) || 0;
+            if (o.out_of_stock && parseFloat(o.refund || 0) >= price && price > 0) {
+                return { label: 'Отменён — возврат ' + o.refund + ' смн ❌', color: '#f87171' };
+            }
+            if (o.dostavka === 2) return { label: 'Доставлен ✅', color: '#4ade80' };
+            if (o.dostavka === 1) return { label: 'Курьер в пути 🚗', color: '#60a5fa' };
+            if (o.omoda) return { label: o.delivery_type === 'pickup' ? 'Готов — заберите заказ ✅' : 'Готов — скоро доставим 🚀', color: '#4ade80' };
+            if (o.qabyl) return { label: 'Принят — готовится ⏳', color: '#facc15' };
+            return { label: 'Отправлен ⏳', color: '#a3a3a3' };
+        }
+
+        function renderMyOrders(serverOrders) {
+            try {
+                const list = document.getElementById('my-orders-list');
+                if (!list) return;
+                let orders = Array.isArray(serverOrders) && serverOrders.length ? serverOrders : null;
+                if (!orders) {
+                    try { orders = JSON.parse(localStorage.getItem("tfc_my_orders") || "[]"); } catch (e) { orders = []; }
+                }
+                // Кэшируем заказы сервера для мгновенной загрузки при следующем открытии
+                if (Array.isArray(serverOrders) && serverOrders.length) {
+                    try {
+                        localStorage.setItem("tfc_my_orders", JSON.stringify(serverOrders.slice(-50).reverse()));
+                    } catch (e) {}
+                }
+                if (!orders || orders.length === 0) {
+                    list.innerHTML = '<p class="text-center opacity-50 text-sm">Заказов пока нет.</p>';
+                    return;
+                }
+                list.innerHTML = orders.slice().reverse().map(o => {
+                    const meta = orderStatusMeta(o);
+                    const food = String(o.food || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || 'Заказ';
+                    const time = String(o.created || '').trim();
+                    const oosNote = o.out_of_stock && !(parseFloat(o.refund || 0) >= (parseFloat(String(o.price || 0).replace(',', '.').replace(/[^0-9.]/g, '')) || 0))
+                        ? '<div class="text-[11px] text-red-400 font-bold mt-1">Некоторые блюда не в наличии ❌</div>' : '';
+                    return `
+                        <div class="notif-item p-4 rounded-xl">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-[10px] opacity-40 uppercase mb-1">#${o.id}${time ? ' · ' + time : ''}</div>
+                                    <div class="text-sm font-bold break-words">${food}</div>
+                                    <div class="text-xs opacity-60 mt-1">${String(o.price || '')} смн · ${o.delivery_type === 'delivery' ? 'Доставка' : 'Самовывоз'}</div>
+                                    ${oosNote}
+                                </div>
+                                <span class="shrink-0 text-[10px] font-black px-2 py-1 rounded-lg text-right" style="color:${meta.color}; border:1px solid ${meta.color}55;">${meta.label}</span>
+                            </div>
+                        </div>`;
+                }).join('');
+            } catch (e) { console.warn("renderMyOrders error:", e); }
+        }
+
+        async function loadMyOrders() {
+            try {
+                renderMyOrders(null); // Мгновенный показ кэша из localStorage
+                let profile = null;
+                try { profile = JSON.parse(localStorage.getItem("tfc_customer_profile") || "null"); } catch (e) {}
+                if (!profile || !profile.id) return;
+                const res = await fetch(adminApiBase() + "/api/orders/customer-status?customer_id=" + encodeURIComponent(profile.id), {
+                    cache: "no-store",
+                    headers: { 'X-API-KEY': API_KEY }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data && data.ok && Array.isArray(data.orders)) renderMyOrders(data.orders);
+            } catch (e) {}
+        }
+
         async function pollCustomerStatus() {
             let profile = null;
             try {
@@ -4825,6 +4918,9 @@ HTML_TEMPLATE = r"""
                     localStorage.setItem("tfc_last_notified_status", statusKey);
                     showLiveStatus(statusText, ok);
                 }
+
+                // Навсозии рӯйхати «Мои заказы» бо статусҳои нав
+                renderMyOrders(data.orders);
             } catch (e) {}
         }
 
@@ -5332,9 +5428,11 @@ def api_orders_customer_status():
     customer_id = request.args.get("customer_id", "")
     try:
         conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
-        cur.execute("SELECT id, food, qabyl, omoda, phone, delivery_type, dostavka, out_of_stock, refund, estimated_time, price FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 1", (customer_id,))
-        r = cur.fetchone(); conn.close()
-        orders = [{"id": r[0], "food": r[1], "qabyl": bool(r[2]), "omoda": bool(r[3]), "phone": r[4], "delivery_type": r[5], "dostavka": int(r[6]), "out_of_stock": bool(r[7]), "refund": r[8] if r[8] is not None else 0, "estimated_time": r[9] if len(r) > 9 else 0, "price": r[10] if len(r) > 10 else "0"}] if r else []
+        cur.execute("SELECT id, food, qabyl, omoda, phone, delivery_type, dostavka, out_of_stock, refund, estimated_time, price, created FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 50", (customer_id,))
+        rows = cur.fetchall(); conn.close()
+        # ASC по id: последний элемент массива — самый новый заказ (как ожидает pollCustomerStatus)
+        orders = [{"id": r[0], "food": r[1], "qabyl": bool(r[2]), "omoda": bool(r[3]), "phone": r[4], "delivery_type": r[5], "dostavka": int(r[6]), "out_of_stock": bool(r[7]), "refund": r[8] if r[8] is not None else 0, "estimated_time": r[9] if len(r) > 9 else 0, "price": r[10] if len(r) > 10 else "0", "created": r[11] if len(r) > 11 else ""} for r in rows]
+        orders.reverse()
         return jsonify({"ok": True, "orders": orders})
     except Exception as e:
         print(f"Status Error: {e}")
