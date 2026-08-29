@@ -1864,13 +1864,6 @@ HTML_TEMPLATE = r"""
                 </div>
             </div>
 
-            <div class="mt-8">
-                <h3 class="text-lg font-black tracking-widest text-center mb-4" style="color: var(--tfc-gold);">МОИ ЗАКАЗЫ</h3>
-                <div id="my-orders-list" class="space-y-3">
-                    <p class="text-center opacity-50 text-sm">Заказов пока нет.</p>
-                </div>
-            </div>
-
             <div class="mt-8 pb-20 space-y-3">
                 <button onclick="showOrderHistory()" class="w-full py-3 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all">
                     <i class="fa-solid fa-clock-rotate-left mr-2"></i> История заказов
@@ -3228,7 +3221,7 @@ HTML_TEMPLATE = r"""
         }
 
         function confirmClearOrderHistory() {
-            if (!confirm("Вы уверены, что хотите очистить историю заказов? Это действие необратимо.")) return;
+            // Мгновенная очистка: без диалогов подтверждения и уведомлений
             (async () => {
                 try {
                     let profile = null;
@@ -3239,18 +3232,12 @@ HTML_TEMPLATE = r"""
                         headers: { 'Content-Type': 'application/json', 'X-API-KEY': API_KEY },
                         body: JSON.stringify({ customer_id: profile.id })
                     });
-                    const data = await res.json().catch(() => ({}));
-                    if (res.ok && data.ok) {
+                    if (res.ok) {
                         localStorage.removeItem("tfc_my_orders"); // чистим локальный кэш
                         renderMyOrders(null);
-                        renderOrderHistory([]);
-                        showLiveStatus("История заказов очищена ✅", true);
-                    } else {
-                        alert("Не удалось очистить историю. Попробуйте ещё раз.");
+                        renderOrderHistory([]); // сразу показываем пустое состояние
                     }
-                } catch (e) {
-                    alert("Ошибка подключения. Попробуйте ещё раз.");
-                }
+                } catch (e) {}
             })();
         }
 
