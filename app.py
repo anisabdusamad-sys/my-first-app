@@ -2069,6 +2069,11 @@ HTML_TEMPLATE = r"""
             <h1 class="tfc-main-title">TFC</h1>
             <div class="tfc-divider"></div>
             <div class="kulob-tag">Tajik Fried Fish & Chicken</div>
+            <!-- CTA: заказать по звонку -->
+            <a href="tel:754169090" class="inline-flex items-center justify-center gap-2 mt-5 px-7 py-3.5 rounded-2xl bg-yellow-400 text-black font-black text-sm tracking-wide uppercase shadow-[0_10px_30px_rgba(250,204,21,0.35)] hover:bg-yellow-300 active:scale-95 transition-all duration-150 select-none">
+                <i class="fa-solid fa-phone-volume text-base"></i>
+                <span>Заказать по звонку 📞</span>
+            </a>
         </div>
     </section>
 
