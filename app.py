@@ -1126,6 +1126,38 @@ HTML_TEMPLATE = r"""
             0%, 100% { background-position: 50% 50%; }
             50% { background-position: 52% 52%; }
         }
+        /* ===== CTA «Заказать по звонку»: пульсирующее свечение + эффект звонка ===== */
+        @keyframes ctaGlowPulse {
+            0%, 100% { box-shadow: 0 10px 30px rgba(250,204,21,0.35), 0 0 0 0 rgba(250,204,21,0.55); }
+            50% { box-shadow: 0 10px 34px rgba(250,204,21,0.6), 0 0 0 14px rgba(250,204,21,0); }
+        }
+        @keyframes ctaRing {
+            0%, 100% { transform: rotate(0deg); }
+            8% { transform: rotate(-15deg); }
+            16% { transform: rotate(13deg); }
+            24% { transform: rotate(-11deg); }
+            32% { transform: rotate(9deg); }
+            40% { transform: rotate(0deg); }
+        }
+        .call-cta {
+            animation: ctaGlowPulse 2.2s ease-in-out infinite;
+            will-change: box-shadow;
+        }
+        .call-cta .fa-phone-volume {
+            display: inline-block;
+            animation: ctaRing 2.2s ease-in-out infinite;
+            transform-origin: 50% 60%;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .call-cta, .call-cta .fa-phone-volume { animation: none; }
+        }
+        /* Бейдж непрочитанных сообщений в нижней навигации */
+        #home-messages-nav-btn { position: relative; }
+        #home-messages-count {
+            position: absolute; top: -4px; right: 9px; min-width: 18px; height: 18px; padding: 0 4px;
+            border: 2px solid #151515; border-radius: 999px; background: #ef4444; color: #fff;
+            font-size: 9px; line-height: 14px; font-weight: 900; text-align: center;
+        }
         #intro-section .tfc-main-title {
             font-family: "Times New Roman", Times, serif !important;
             font-size: clamp(7rem, 24vw, 16rem); /* Андозаи мувофиқ */
@@ -1823,8 +1855,8 @@ HTML_TEMPLATE = r"""
         <button id="home-cart-nav-btn" type="button" data-home-nav="cart" onclick="openHomeDestination('cart')">
             <i class="fa-solid fa-cart-shopping"></i><span>Корзина</span><span id="home-cart-count" class="hidden">0</span>
         </button>
-        <button type="button" data-home-nav="messages" onclick="openHomeDestination('messages')">
-            <i class="fa-solid fa-message"></i><span>Сообщения</span>
+        <button id="home-messages-nav-btn" type="button" data-home-nav="messages" onclick="openHomeDestination('messages')">
+            <i class="fa-solid fa-message"></i><span>Сообщения</span><span id="home-messages-count" class="hidden">0</span>
         </button>
         <button type="button" data-home-nav="profile" onclick="openHomeDestination('profile')">
             <i class="fa-solid fa-user"></i><span>Профиль</span>
@@ -2070,7 +2102,7 @@ HTML_TEMPLATE = r"""
             <div class="tfc-divider"></div>
             <div class="kulob-tag">Tajik Fried Fish & Chicken</div>
             <!-- CTA: заказать по звонку -->
-            <a href="tel:754169090" class="inline-flex items-center justify-center gap-2 mt-5 px-7 py-3.5 rounded-2xl bg-yellow-400 text-black font-black text-sm tracking-wide uppercase shadow-[0_10px_30px_rgba(250,204,21,0.35)] hover:bg-yellow-300 active:scale-95 transition-all duration-150 select-none">
+            <a href="tel:754169090" class="call-cta inline-flex items-center justify-center gap-2 mt-5 px-7 py-3.5 rounded-2xl bg-yellow-400 text-black font-black text-sm tracking-wide uppercase shadow-[0_10px_30px_rgba(250,204,21,0.35)] hover:bg-yellow-300 active:scale-95 transition-all duration-150 select-none">
                 <i class="fa-solid fa-phone-volume text-base"></i>
                 <span>Заказать по звонку 📞</span>
             </a>
@@ -4030,6 +4062,12 @@ HTML_TEMPLATE = r"""
                 badge.textContent = unreadNotifCount;
                 badge.classList.toggle('hidden', unreadNotifCount === 0);
             }
+            // Бейдж «Сообщения» в нижней навигации — тот же счётчик непрочитанных
+            const msgBadge = document.getElementById('home-messages-count');
+            if (msgBadge) {
+                msgBadge.textContent = unreadNotifCount;
+                msgBadge.classList.toggle('hidden', unreadNotifCount === 0);
+            }
         }
 
         function showNotifications() {
@@ -4386,6 +4424,14 @@ HTML_TEMPLATE = r"""
                         } catch (e) {}
                         renderMyOrders();
                         showLiveStatus(msg, false);
+
+                        // Автоочистка всех сообщений при новом заказе + сброс бейджа в 0
+                        notificationsHistory = [];
+                        localStorage.setItem("tfc_notifications_history", JSON.stringify(notificationsHistory));
+                        unreadNotifCount = 0;
+                        localStorage.setItem("tfc_unread_notif_count", 0);
+                        updateNotifBadge();
+                        if (typeof renderNotificationsList === 'function') renderNotificationsList();
 
                         closeOrderModal();
                         // Очищаем адрес после использования
