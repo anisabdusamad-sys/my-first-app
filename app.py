@@ -473,28 +473,30 @@ ADMIN_HTML = """<!DOCTYPE html>
         const API_KEY = "tfc_secret_key_2026_xyz_secure";
 
         async function loadOrders() {
-            const res = await fetch(`${BASE_URL}/api/orders/since?last_id=0`, {
-                headers: {
-                    'X-API-KEY': API_KEY
-                }
-            });
-            const data = await res.json();
-            const tbody = document.getElementById('orders-table');
-            tbody.innerHTML = '';
-            data.orders.reverse().forEach(o => {
-                tbody.innerHTML += `
-                    <tr>
-                        <td>${o.id}</td>
-                        <td>${o.customer}</td>
-                        <td>${o.phone}</td>
-                        <td>${o.delivery_type === 'delivery' ? '🚀 Доставка' : '🛍️ Самовывоз'}</td>
-                        <td>${o.food}</td>
-                        <td>${o.price}с</td>
-                        <td><button onclick="updateStatus(${o.id}, 'qabyl', ${!o.qabyl})" class="${o.qabyl ? 'text-green-500':'text-red-500'} text-xl">${o.qabyl ? '✅':'⏳'}</button></td>
-                        <td><button onclick="updateStatus(${o.id}, 'omoda', ${!o.omoda})" class="${o.omoda ? 'text-green-500':'text-yellow-500'}">${o.omoda ? '✅':'🔥'}</button></td>
-                    </tr>`;
-            });
-            document.getElementById('total-count').textContent = data.orders.length;
+            try {
+                const res = await fetch(`${BASE_URL}/api/orders/since?last_id=0`, {
+                    headers: {
+                        'X-API-KEY': API_KEY
+                    }
+                });
+                const data = await res.json();
+                const tbody = document.getElementById('orders-table');
+                tbody.innerHTML = '';
+                data.orders.reverse().forEach(o => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${o.id}</td>
+                            <td>${o.customer}</td>
+                            <td>${o.phone}</td>
+                            <td>${o.delivery_type === 'delivery' ? '🚀 Доставка' : '🛍️ Самовывоз'}</td>
+                            <td>${o.food}</td>
+                            <td>${o.price}с</td>
+                            <td><button onclick="updateStatus(${o.id}, 'qabyl', ${!o.qabyl})" class="${o.qabyl ? 'text-green-500':'text-red-500'} text-xl">${o.qabyl ? '✅':'⏳'}</button></td>
+                            <td><button onclick="updateStatus(${o.id}, 'omoda', ${!o.omoda})" class="${o.omoda ? 'text-green-500':'text-yellow-500'}">${o.omoda ? '✅':'🔥'}</button></td>
+                        </tr>`;
+                });
+                document.getElementById('total-count').textContent = data.orders.length;
+            } catch (e) { /* Тиҳо: хатогиҳои муваққатии шабака — бидуни error-и сурх */ }
         }
         async function updateStatus(id, field, val) {
             const body = {id, field, value:val};
@@ -508,7 +510,11 @@ ADMIN_HTML = """<!DOCTYPE html>
             });
             loadOrders();
         }
-        setInterval(loadOrders, 3000); loadOrders();
+        // Keep-alive: пингуем сервер каждые 5 минут, чтобы Render не усыплял сервис
+        const keepAlive = () => fetch(window.location.origin + "/ping", { cache: "no-store" }).catch(() => {});
+        keepAlive();
+        setInterval(keepAlive, 300000); // Ping every 5 minutes (300,000 ms)
+        setInterval(() => loadOrders().catch(() => {}), 3000); loadOrders().catch(() => {});
     </script>
 </body></html>"""
 
@@ -2707,9 +2713,9 @@ HTML_TEMPLATE = r"""
             }
 
             // Keep-alive: пингуем сервер каждые 5 минут, чтобы Render не усыплял сервис
-            const keepAlive = () => fetch(BASE_URL + "/ping", { cache: "no-store" }).catch(() => {});
+            const keepAlive = () => fetch(window.location.origin + "/ping", { cache: "no-store" }).catch(() => {});
             keepAlive();
-            setInterval(keepAlive, 300000);
+            setInterval(keepAlive, 300000); // Ping every 5 minutes (300,000 ms)
         });
 
         // Пайваст кардани Fullscreen ба тамоми экран ва экрани боркунӣ

@@ -55,7 +55,7 @@ def build_local_origins():
 # CORS configuration for bilol.py backend API
 CLIENT_URL = os.getenv("CLIENT_URL") or os.getenv("TFC_API_URL") or f"http://{get_local_ip()}:5000"
 LOCAL_ORIGINS = build_local_origins()
-CORS(app, resources={r"/api/*": {
+CORS(app, resources={r"/ping": {"origins": "*", "methods": ["GET", "OPTIONS"]}, r"/api/*": {
     "origins": [CLIENT_URL] + LOCAL_ORIGINS,
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "X-API-KEY"]
@@ -2141,6 +2141,11 @@ HTML = r"""<!DOCTYPE html>
             // Live notifications from menu website
             startLivePolling();
 
+            // Keep-alive: пингуем свой сервер каждые 5 минут, чтобы Render не усыплял сервис
+            const keepAlive = () => fetch(window.location.origin + "/ping", { cache: "no-store" }).catch(() => {});
+            keepAlive();
+            setInterval(keepAlive, 300000); // Ping every 5 minutes (300,000 ms)
+
             // Илова кардани скаролл барои дидани майдон ҳангоми пайдо шудани клавиатура
             document.addEventListener('focusin', (e) => {
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
@@ -2165,27 +2170,27 @@ HTML = r"""<!DOCTYPE html>
             // Инкременталии /api/orders/since; агар сервер /api/orders-ро насупорад,
             // ба /api/orders мегузарем (fallback барои endpoint-ҳои мухталиф).
             const sinceUrl = `${API_BASE_URL}/api/orders/since?last_id=${lastSeenOrderId}`;
-            console.log('[TFC-Admin] polling', sinceUrl, '| lastSeenOrderId =', lastSeenOrderId);
+            console.debug('[TFC-Admin] polling', sinceUrl, '| lastSeenOrderId =', lastSeenOrderId);
             let res;
             try {
                 res = await fetch(sinceUrl, { cache: 'no-store', headers: apiHeaders() });
                 if (res.status === 404) {
-                    console.warn('[TFC-Admin] /api/orders/since -> 404, falling back to /api/orders');
+                    console.debug('[TFC-Admin] /api/orders/since -> 404, falling back to /api/orders');
                     res = await fetch(`${API_BASE_URL}/api/orders`, { cache: 'no-store', headers: apiHeaders() });
                 }
             } catch (e) {
-                console.error('[TFC-Admin] fetch error (CORS/network):', e);
+                // Тиҳо: хатогиҳои муваққатии шабака (timeout / network changed) — бидуни error-и сурх
                 return;
             }
-            console.log('[TFC-Admin] response status =', res.status, '| URL =', res.url);
+            console.debug('[TFC-Admin] response status =', res.status, '| URL =', res.url);
             if (res.status === 401) {
-                console.error('[TFC-Admin] 401 — API_KEY incorrect or rejected by app.py');
+                console.debug('[TFC-Admin] 401 — API_KEY incorrect or rejected by app.py');
             }
             if (!res || !res.ok) return;
 
             let data;
-            try { data = await res.json(); } catch (e) { console.error('[TFC-Admin] JSON parse failed:', e); return; }
-            if (!data || !data.ok) { console.error('[TFC-Admin] response not ok:', data); return; }
+            try { data = await res.json(); } catch (e) { return; } // Тиҳо: парсинги ҷавоби нопурра
+            if (!data || !data.ok) { console.debug('[TFC-Admin] response not ok:', data); return; }
 
             const newOrders = Array.isArray(data.orders) ? data.orders : [];
             if (newOrders.length === 0) return;
@@ -2865,6 +2870,12 @@ def api_external_sync():
 
     return jsonify({"ok": False, "error": "unknown_sync_type"}), 400
 
+
+@app.route("/ping", methods=["GET"])
+def ping():
+    """Keep-alive endpoint: Render free-tier services sleep after ~15 min
+    of inactivity; periodic pings from the browser keep the service awake."""
+    return jsonify({"status": "awake"}), 200
 
 @app.route("/api/orders/new", methods=["POST", "OPTIONS"])
 @require_api_key
