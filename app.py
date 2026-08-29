@@ -1871,7 +1871,10 @@ HTML_TEMPLATE = r"""
                 </div>
             </div>
 
-            <div class="mt-8 pb-20">
+            <div class="mt-8 pb-20 space-y-3">
+                <button onclick="showOrderHistory()" class="w-full py-3 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all">
+                    <i class="fa-solid fa-clock-rotate-left mr-2"></i> История заказов
+                </button>
                 <button id="profile-settings-btn" onclick="showProfileSettings()" class="w-full py-3 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all">
                     <i class="fa-solid fa-gear mr-2"></i> Настройка
                 </button>
@@ -1892,6 +1895,26 @@ HTML_TEMPLATE = r"""
                     <i id="profile-theme-icon" class="fa-solid fa-moon mr-2"></i> Режим
                 </button>
                 <button onclick="hideProfileSettings()" class="w-full py-4 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all text-center">
+                    <i class="fa-solid fa-arrow-left mr-2"></i> Назад
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ORDER HISTORY SECTION -->
+    <section id="order-history-section" class="content-section" style="display: none;">
+        <div class="max-w-md mx-auto px-4 py-8" style="color: var(--text-body);">
+            <div class="mb-6 text-center">
+                <h2 class="text-3xl font-black tracking-widest" style="color: var(--tfc-gold);">ИСТОРИЯ ЗАКАЗОВ</h2>
+            </div>
+            <div id="order-history-list" class="space-y-3">
+                <p class="text-center opacity-50 text-sm">Загрузка…</p>
+            </div>
+            <div class="mt-8 pb-20 space-y-3">
+                <button onclick="confirmClearOrderHistory()" class="w-full py-4 rounded-2xl font-black border border-red-500/30 bg-red-500/10 text-red-300 shadow-lg active:scale-95 transition-all text-center">
+                    <i class="fa-solid fa-trash-can mr-2"></i> Очистить историю
+                </button>
+                <button onclick="hideOrderHistory()" class="w-full py-4 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all text-center">
                     <i class="fa-solid fa-arrow-left mr-2"></i> Назад
                 </button>
             </div>
@@ -2652,6 +2675,11 @@ HTML_TEMPLATE = r"""
                 const auth = document.getElementById('auth-section');
                 if (auth) auth.classList.remove('hidden');
             }
+
+            // Keep-alive: пингуем сервер каждые 5 минут, чтобы Render не усыплял сервис
+            const keepAlive = () => fetch(BASE_URL + "/ping", { cache: "no-store" }).catch(() => {});
+            keepAlive();
+            setInterval(keepAlive, 300000);
         });
 
         // Пайваст кардани Fullscreen ба тамоми экран ва экрани боркунӣ
@@ -2923,7 +2951,8 @@ HTML_TEMPLATE = r"""
             const screensToHide = [
                 'menu-section', 'fastfood-section', 'sushi-section', 'pizza-section',
                 'summer-menu-section', 'combo-section', 'otziv-section', 'aktsii-section',
-                'adres-section', 'vakansii-section', 'notifications-section', 'profile-section'
+                'adres-section', 'vakansii-section', 'notifications-section', 'profile-section',
+                'order-history-section'
             ];
 
             screensToHide.forEach((id) => {
@@ -3116,6 +3145,115 @@ HTML_TEMPLATE = r"""
             profileSection.classList.add('profile-screen-animate');
         }
 
+        // ===== ИСТОРИЯ ЗАКАЗОВ (профиль) =====
+        function showOrderHistory() {
+            const profileSection = document.getElementById('profile-section');
+            const historySection = document.getElementById('order-history-section');
+            if (profileSection) profileSection.style.display = 'none';
+            if (historySection) {
+                historySection.style.display = 'block';
+                historySection.classList.remove('profile-settings-animate');
+                void historySection.offsetWidth;
+                historySection.classList.add('profile-settings-animate');
+            }
+            loadOrderHistory();
+        }
+
+        function hideOrderHistory() {
+            const profileSection = document.getElementById('profile-section');
+            const historySection = document.getElementById('order-history-section');
+            if (historySection) historySection.style.display = 'none';
+            if (profileSection) profileSection.style.display = 'block';
+        }
+
+        function renderOrderHistory(orders) {
+            const list = document.getElementById('order-history-list');
+            if (!list || !Array.isArray(orders)) return;
+            if (orders.length === 0) {
+                list.innerHTML = '<p class="text-center opacity-50 text-sm">История заказов пуста.</p>';
+                return;
+            }
+            const numP = v => parseFloat(String(v || 0).replace(',', '.').replace(/[^0-9.]/g, '')) || 0;
+            const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            list.innerHTML = orders.map(o => {
+                const meta = orderStatusMeta(o);
+                const foodHtml = String(o.food || '').split(/,\s*/).filter(Boolean).map(it => {
+                    const struck = it.includes('<s>');
+                    const clean = esc(it.replace(/<\/?s>/g, '')).replace(/\s+/g, ' ').trim();
+                    if (!clean) return '';
+                    return struck ? `<s style="opacity:0.55;text-decoration-color:#f87171;text-decoration-thickness:2px;">${clean}</s>` : clean;
+                }).filter(Boolean).join(', ') || 'Заказ';
+                const refundV = numP(o.refund);
+                const origPrice = numP(o.price);
+                const isPartial = !!(o.out_of_stock && refundV > 0 && refundV < origPrice);
+                const priceLine = isPartial
+                    ? `Итого: <b>${+(origPrice - refundV).toFixed(2)}</b> смн · <s style="opacity:0.55;">${String(o.price || '')} смн</s>`
+                    : `${String(o.price || '')} смн`;
+                const time = String(o.created || '').trim();
+                return `
+                    <div class="notif-item p-4 rounded-xl">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-[10px] opacity-40 uppercase mb-1">#${o.id}${time ? ' · ' + time : ''}</div>
+                                <div class="text-sm font-bold break-words">${foodHtml}</div>
+                                <div class="text-xs opacity-60 mt-1">${priceLine} · ${o.delivery_type === 'delivery' ? 'Доставка' : 'Самовывоз'}</div>
+                            </div>
+                            <span class="shrink-0 text-[10px] font-black px-2 py-1 rounded-lg text-right" style="color:${meta.color}; border:1px solid ${meta.color}55;">${meta.label}</span>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        async function loadOrderHistory() {
+            const list = document.getElementById('order-history-list');
+            if (!list) return;
+            list.innerHTML = '<p class="text-center opacity-50 text-sm py-4"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Загрузка…</p>';
+            try {
+                let profile = null;
+                try { profile = JSON.parse(localStorage.getItem("tfc_customer_profile") || "null"); } catch (e) {}
+                if (!profile || !profile.id) {
+                    list.innerHTML = '<p class="text-center opacity-50 text-sm">История заказов пуста.</p>';
+                    return;
+                }
+                const res = await fetch(adminApiBase() + "/api/orders/history?customer_id=" + encodeURIComponent(profile.id), {
+                    cache: "no-store",
+                    headers: { 'X-API-KEY': API_KEY }
+                });
+                if (!res.ok) throw new Error("status " + res.status);
+                const data = await res.json();
+                renderOrderHistory(Array.isArray(data.orders) ? data.orders : []);
+            } catch (e) {
+                list.innerHTML = '<p class="text-center text-red-400 text-sm py-4">Не удалось загрузить историю. Попробуйте ещё раз.</p>';
+            }
+        }
+
+        function confirmClearOrderHistory() {
+            if (!confirm("Вы уверены, что хотите очистить историю заказов? Это действие необратимо.")) return;
+            (async () => {
+                try {
+                    let profile = null;
+                    try { profile = JSON.parse(localStorage.getItem("tfc_customer_profile") || "null"); } catch (e) {}
+                    if (!profile || !profile.id) return;
+                    const res = await fetch(adminApiBase() + "/api/orders/clear-history", {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-API-KEY': API_KEY },
+                        body: JSON.stringify({ customer_id: profile.id })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.ok) {
+                        localStorage.removeItem("tfc_my_orders"); // чистим локальный кэш
+                        renderMyOrders(null);
+                        renderOrderHistory([]);
+                        showLiveStatus("История заказов очищена ✅", true);
+                    } else {
+                        alert("Не удалось очистить историю. Попробуйте ещё раз.");
+                    }
+                } catch (e) {
+                    alert("Ошибка подключения. Попробуйте ещё раз.");
+                }
+            })();
+        }
+
         function attachPageSwipeNavigation() {
             const settingsSection = document.getElementById('profile-settings-section');
             if (!settingsSection) return;
@@ -3156,7 +3294,7 @@ HTML_TEMPLATE = r"""
             const sections = ['menu-section', 'pizza-section', 'fastfood-section', 'summer-menu-section',
                               'combo-section', 'otziv-section', 'aktsii-section', 'adres-section',
                               'vakansii-section', 'notifications-section', 'profile-section',
-                              'profile-settings-section'];
+                              'profile-settings-section', 'order-history-section'];
             for (const id of sections) {
                 const el = document.getElementById(id);
                 if (el && el.style.display !== 'none' && el.style.display !== '') return id;
@@ -3197,7 +3335,8 @@ HTML_TEMPLATE = r"""
                     'combo-section': 'hideCombo', 'otziv-section': 'hideOtziv',
                     'aktsii-section': 'hideAktsii', 'adres-section': 'hideAdres',
                     'vakansii-section': 'hideVakansii', 'notifications-section': 'hideNotifications',
-                    'profile-section': 'hideProfileScreen'
+                    'profile-section': 'hideProfileScreen',
+                    'order-history-section': 'hideOrderHistory'
                 };
                 const hideFn = hideFnMap[openSection];
                 if (hideFn && typeof window[hideFn] === 'function') {
@@ -5490,6 +5629,36 @@ def api_orders_update_status():
         pass
     return jsonify({"ok": True})
 
+def _build_order_dicts(rows):
+    """Serialize order rows for client endpoints (customer-status / history)."""
+    def _num(v):
+        try:
+            return float(re.sub(r"[^0-9.]", "", str(v).replace(",", ".")) or 0)
+        except Exception:
+            return 0.0
+    orders = []
+    for r in rows:
+        food_str = r[1] or ""
+        refund_v = float(r[8]) if r[8] is not None else 0.0
+        price_v = _num(r[10])
+        oos_b = bool(r[7])
+        struck_items = re.findall(r"<s>(.*?)</s>", food_str)
+        # Частичная отмена: есть зачёркнутые позиции, но заказ НЕ отменён полностью (refund < price)
+        has_cancelled = oos_b and bool(struck_items) and 0 < refund_v < price_v
+        orders.append({
+            "id": r[0], "food": food_str, "qabyl": bool(r[2]), "omoda": bool(r[3]),
+            "phone": r[4], "delivery_type": r[5], "dostavka": int(r[6]),
+            "out_of_stock": oos_b,
+            "refund": refund_v,
+            "estimated_time": r[9] if len(r) > 9 else 0,
+            "price": r[10] if len(r) > 10 else "0",
+            "created": r[11] if len(r) > 11 else "",
+            "has_cancelled_items": has_cancelled,
+            "struck_items": struck_items,
+            "final_price": max(0.0, price_v - refund_v) if has_cancelled else price_v,
+        })
+    return orders
+
 @app.route("/api/orders/customer-status", methods=["GET"])
 @require_api_key
 def api_orders_customer_status():
@@ -5499,37 +5668,47 @@ def api_orders_customer_status():
         cur.execute("SELECT id, food, qabyl, omoda, phone, delivery_type, dostavka, out_of_stock, refund, estimated_time, price, created FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 50", (customer_id,))
         rows = cur.fetchall(); conn.close()
         # ASC по id: последний элемент массива — самый новый заказ (как ожидает pollCustomerStatus)
-        def _num(v):
-            try:
-                return float(re.sub(r"[^0-9.]", "", str(v).replace(",", ".")) or 0)
-            except Exception:
-                return 0.0
-        orders = []
-        for r in rows:
-            food_str = r[1] or ""
-            refund_v = float(r[8]) if r[8] is not None else 0.0
-            price_v = _num(r[10])
-            oos_b = bool(r[7])
-            struck_items = re.findall(r"<s>(.*?)</s>", food_str)
-            # Частичная отмена: есть зачёркнутые позиции, но заказ НЕ отменён полностью (refund < price)
-            has_cancelled = oos_b and bool(struck_items) and 0 < refund_v < price_v
-            orders.append({
-                "id": r[0], "food": food_str, "qabyl": bool(r[2]), "omoda": bool(r[3]),
-                "phone": r[4], "delivery_type": r[5], "dostavka": int(r[6]),
-                "out_of_stock": oos_b,
-                "refund": refund_v,
-                "estimated_time": r[9] if len(r) > 9 else 0,
-                "price": r[10] if len(r) > 10 else "0",
-                "created": r[11] if len(r) > 11 else "",
-                "has_cancelled_items": has_cancelled,
-                "struck_items": struck_items,
-                "final_price": max(0.0, price_v - refund_v) if has_cancelled else price_v,
-            })
+        orders = _build_order_dicts(rows)
         orders.reverse()
         return jsonify({"ok": True, "orders": orders})
     except Exception as e:
         print(f"Status Error: {e}")
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/orders/history", methods=["GET"])
+@require_api_key
+def api_orders_history():
+    """Полная история заказов клиента (новые сверху)."""
+    customer_id = request.args.get("customer_id", "").strip()
+    if not customer_id:
+        return jsonify({"ok": False, "error": "customer_id is required"}), 400
+    try:
+        conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+        cur.execute("SELECT id, food, qabyl, omoda, phone, delivery_type, dostavka, out_of_stock, refund, estimated_time, price, created FROM orders WHERE customer_id = ? ORDER BY id DESC LIMIT 100", (customer_id,))
+        rows = cur.fetchall(); conn.close()
+        orders = _build_order_dicts(rows)  # уже DESC: новые сверху
+        return jsonify({"ok": True, "orders": orders, "count": len(orders)})
+    except Exception as e:
+        print(f"History Error: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/orders/clear-history", methods=["POST", "DELETE"])
+@require_api_key
+def api_orders_clear_history():
+    """Очистка истории заказов конкретного клиента."""
+    data = request.get_json(silent=True) or {}
+    customer_id = str(data.get("customer_id", "")).strip()
+    if not customer_id:
+        return jsonify({"ok": False, "error": "customer_id is required"}), 400
+    try:
+        conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+        cur.execute("DELETE FROM orders WHERE customer_id = ?", (customer_id,))
+        deleted = cur.rowcount
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "deleted": deleted})
+    except sqlite3.Error as e:
+        print(f"Clear History Error: {e}")
+        return jsonify({"ok": False, "error": "Database error"}), 500
 
 @app.route("/api/foods/list", methods=["GET"])
 @require_api_key
@@ -5620,6 +5799,12 @@ def food_detail(food_id):
     except Exception as e:
         print(f"Error loading food detail: {e}")
         return redirect('/')
+
+@app.route("/ping", methods=["GET"])
+def ping():
+    """Keep-alive endpoint: Render free-tier services sleep after ~15 min
+    of inactivity; periodic pings from the client keep the service awake."""
+    return jsonify({"status": "awake"}), 200
 
 @app.route("/api/host-info", methods=["GET"])
 def api_host_info():
