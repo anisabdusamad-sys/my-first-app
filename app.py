@@ -1873,7 +1873,7 @@ HTML_TEMPLATE = r"""
         <div class="max-w-md mx-auto px-4 py-8" style="color: var(--text-body);">
             <div class="text-center mb-6">
                 <div class="relative mx-auto w-28 h-28 rounded-full border-4 border-yellow-400/70 bg-black/20 flex items-center justify-center overflow-hidden shadow-2xl">
-                    <img id="profile-avatar-preview" class="hidden w-full h-full object-cover" alt="Profile avatar">
+                    <img id="profile-avatar-preview" class="hidden w-full h-full object-cover" alt="Аватар профиля">
                     <i id="profile-avatar-placeholder" class="fa-solid fa-user text-4xl text-white/60"></i>
                 </div>
                 <label for="profile-avatar-input" class="mt-4 inline-flex items-center justify-center w-12 h-12 rounded-full bg-yellow-400 text-black shadow-lg cursor-pointer">
@@ -1884,12 +1884,12 @@ HTML_TEMPLATE = r"""
 
             <div class="space-y-4">
                 <div>
-                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Ном</label>
-                    <input id="profile-first-name" type="text" placeholder="Ном" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400">
+                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Имя</label>
+                    <input id="profile-first-name" type="text" placeholder="Имя" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400">
                 </div>
                 <div>
-                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Насаб</label>
-                    <input id="profile-last-name" type="text" placeholder="Насаб" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400">
+                    <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Фамилия</label>
+                    <input id="profile-last-name" type="text" placeholder="Фамилия" class="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400">
                 </div>
                 <div>
                     <label class="block text-[10px] uppercase tracking-[3px] mb-2" style="color: var(--tfc-gold);">Номер телефона</label>
@@ -1920,7 +1920,7 @@ HTML_TEMPLATE = r"""
             </div>
             <div class="profile-settings-stack profile-settings-animate">
                 <button onclick="signOut()" class="w-full py-4 rounded-2xl font-black border border-red-500/30 bg-red-500/10 text-red-300 shadow-lg active:scale-95 transition-all text-center">
-                    <i class="fa-solid fa-right-from-bracket mr-2"></i> Лог аут
+                    <i class="fa-solid fa-right-from-bracket mr-2"></i> Выйти
                 </button>
                 <button onclick="toggleTheme()" class="w-full py-4 rounded-2xl font-black border border-white/10 bg-white/5 text-white shadow-lg active:scale-95 transition-all text-center">
                     <i id="profile-theme-icon" class="fa-solid fa-moon mr-2"></i> Режим
@@ -1957,7 +1957,7 @@ HTML_TEMPLATE = r"""
         <div class="order-modal">
             <div class="px-6 py-5 border-b border-white/10 flex items-start justify-between">
                 <div>
-                    <p class="text-xs uppercase tracking-[3px] text-white/40">Ваш Сабад</p>
+                    <p class="text-xs uppercase tracking-[3px] text-white/40">Ваша корзина</p>
                     <h3 class="text-2xl font-black mt-1">Список заказов</h3>
                 </div>
                 <button onclick="closeCartModal()" class="w-10 h-10 rounded-full transition" style="background: var(--modal-qty-btn-bg); color: var(--modal-qty-btn-color);">
@@ -2003,6 +2003,33 @@ HTML_TEMPLATE = r"""
                         УДАЛИТЬ СРАЗУ
                     </button>
                     <button onclick="closeNotifClearModal()" class="w-full py-4 bg-white/10 text-white/60 font-black rounded-2xl active:scale-95 transition uppercase tracking-widest text-xs">
+                        ОТМЕНА
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛ ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ ОТЗЫВА (с кодом доступа) -->
+    <div id="delete-review-modal-overlay" class="order-modal-overlay">
+        <div class="order-modal">
+            <div class="px-6 py-8 text-center">
+                <div class="w-20 h-20 bg-red-600/20 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl shadow-[0_0_30px_rgba(228,0,43,0.2)]">
+                    <i class="fa-solid fa-trash-can"></i>
+                </div>
+                <h2 class="text-xl font-black mb-2 uppercase tracking-tight">УДАЛИТЬ ОТЗЫВ?</h2>
+                <p class="text-sm opacity-60 mb-6 leading-relaxed">
+                    Вы действительно хотите удалить этот отзыв? Это действие нельзя отменить.
+                </p>
+                <input id="delete-review-code-input" type="password" inputmode="text" autocomplete="off" placeholder="Введите код подтверждения"
+                    onkeydown="if(event.key==='Enter') executeDeleteReview()"
+                    class="w-full px-4 py-3 mb-2 rounded-xl border border-white/10 bg-white/5 text-white outline-none focus:ring-2 focus:ring-yellow-400 text-center tracking-widest">
+                <p id="delete-review-code-error" class="hidden text-xs text-red-400 mb-4 font-bold">Неверный код! Попробуйте ещё раз.</p>
+                <div class="flex flex-col gap-3">
+                    <button onclick="executeDeleteReview()" class="w-full py-4 bg-red-600 text-white font-black rounded-2xl active:scale-95 transition shadow-lg shadow-red-500/20 uppercase tracking-widest text-xs">
+                        ПОДТВЕРДИТЬ УДАЛЕНИЕ
+                    </button>
+                    <button onclick="closeDeleteReviewModal()" class="w-full py-4 bg-white/10 text-white/60 font-black rounded-2xl active:scale-95 transition uppercase tracking-widest text-xs">
                         ОТМЕНА
                     </button>
                 </div>
@@ -4036,7 +4063,38 @@ HTML_TEMPLATE = r"""
             }
         }
 
-        async function deleteReview(id) {
+        // ===== УДАЛЕНИЕ ОТЗЫВА: подтверждение с кодом доступа =====
+        const REVIEW_DELETE_CODE = "159951.tfc";
+        let pendingDeleteReviewId = null;
+
+        function deleteReview(id) {
+            pendingDeleteReviewId = id;
+            const codeInput = document.getElementById('delete-review-code-input');
+            const errEl = document.getElementById('delete-review-code-error');
+            if (codeInput) codeInput.value = '';
+            if (errEl) errEl.classList.add('hidden');
+            document.getElementById('delete-review-modal-overlay').classList.add('active');
+            if (codeInput) setTimeout(() => codeInput.focus(), 100);
+        }
+
+        function closeDeleteReviewModal() {
+            document.getElementById('delete-review-modal-overlay').classList.remove('active');
+            pendingDeleteReviewId = null;
+        }
+
+        async function executeDeleteReview() {
+            const codeInput = document.getElementById('delete-review-code-input');
+            const errEl = document.getElementById('delete-review-code-error');
+            const enteredCode = (codeInput ? codeInput.value : '').trim();
+            if (enteredCode !== REVIEW_DELETE_CODE) {
+                if (errEl) errEl.classList.remove('hidden');
+                if (codeInput) { codeInput.value = ''; codeInput.focus(); }
+                return;
+            }
+            if (errEl) errEl.classList.add('hidden');
+            if (pendingDeleteReviewId == null) { closeDeleteReviewModal(); return; }
+            const id = pendingDeleteReviewId;
+            closeDeleteReviewModal();
             const res = await fetch(`${BASE_URL}/api/reviews/delete/${id}`, { 
                 method: 'POST',
                 headers: {
@@ -5204,6 +5262,9 @@ HTML_TEMPLATE = r"""
         });
         document.getElementById("notif-clear-modal-overlay").addEventListener("click", function (e) {
             if (e.target.id === "notif-clear-modal-overlay") closeNotifClearModal();
+        });
+        document.getElementById("delete-review-modal-overlay").addEventListener("click", function (e) {
+            if (e.target.id === "delete-review-modal-overlay") closeDeleteReviewModal();
         });
         const phoneOrderOverlayEl = document.getElementById("phone-order-modal-overlay");
         if (phoneOrderOverlayEl) phoneOrderOverlayEl.addEventListener("click", function (e) {
